@@ -1,4 +1,4 @@
 module.exports = {
-    // skipFiles: ['test', 'interfaces'],
+    skipFiles: ['mock'],
     modifierWhitelist: ['nonReentrant']
 };

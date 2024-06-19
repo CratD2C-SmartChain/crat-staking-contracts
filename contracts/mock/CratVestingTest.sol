@@ -5,9 +5,11 @@ import "@openzeppelin/contracts/access/AccessControl.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import "@quant-finance/solidity-datetime/contracts/DateTime.sol";
 
-contract CratVesting is AccessControl, ReentrancyGuard {
+contract CratVestingTest is AccessControl, ReentrancyGuard {
     uint256 public constant PRECISION = 10 ** 26;
     uint256 public constant TOTAL_SUPPLY = 300_000_000 * 10 ** 18;
+
+    uint256 public testTime;
 
     uint16 private _startYear;
     uint16 private _endYear;
@@ -24,6 +26,13 @@ contract CratVesting is AccessControl, ReentrancyGuard {
     constructor(address _admin) {
         require(_admin != address(0), "CratVesting: 0x00");
         _grantRole(DEFAULT_ADMIN_ROLE, _admin);
+
+        testTime = block.timestamp;
+    }
+
+    function chnageTestTime(uint256 value) external {
+        require(testTime < value);
+        testTime = value;
     }
 
     // admin methods
@@ -169,7 +178,7 @@ contract CratVesting is AccessControl, ReentrancyGuard {
     function pending(address user) public view returns (uint256 unlocked) {
         if (_startYear == 0 || !_addressToInfo[user].hasShedule) return 0;
 
-        uint256 currentYear = DateTime.getYear(block.timestamp);
+        uint256 currentYear = DateTime.getYear(testTime);
         currentYear = currentYear > _endYear ? _endYear : currentYear;
         uint256 indexTill = (currentYear - _startYear) / 2;
         uint256 perc;
