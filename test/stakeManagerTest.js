@@ -9,7 +9,7 @@ const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000";
   
 describe("CratStakeManager", function () {
     async function deployFixture() {
-      const [owner, distributor, slashReceiver, validator1, delegator1, validator2, delegator2_1, delegator2_2] = await ethers.getSigners();
+      const [owner, distributor, slashReceiver, validator1, delegator1, validator2, delegator2_1, delegator2_2, swap] = await ethers.getSigners();
   
       const CratStakeManager = await ethers.getContractFactory("CratStakeManager");
       const stakeManager = await upgrades.deployProxy(CratStakeManager, [distributor.address, slashReceiver.address]);
@@ -20,7 +20,7 @@ describe("CratStakeManager", function () {
         await stakeManager.setValidatorsMinimum(ethers.parseEther('100'));
         await stakeManager.setDelegatorsMinimum(ethers.parseEther('10'));
   
-      return { owner, distributor, slashReceiver, validator1, delegator1, validator2, delegator2_1, delegator2_2, stakeManager };
+      return { owner, distributor, slashReceiver, validator1, delegator1, validator2, delegator2_1, delegator2_2, stakeManager, swap };
     }
   
     describe("Deployment", function () {
@@ -945,6 +945,68 @@ describe("CratStakeManager", function () {
 
           await expect(upgrades.deployProxy(StakeManager, [ZERO_ADDRESS, ZERO_ADDRESS])).to.be.revertedWith("CratStakeManager: 0x00");
           await upgrades.deployProxy(StakeManager, [ZERO_ADDRESS, owner.address]);
+        })
+
+        it("Add depositForVaidator method", async ()=> {
+          const { stakeManager, validator1, swap, owner } = await loadFixture(deployFixture);
+
+          await expect(stakeManager.depositForValidator(ZERO_ADDRESS, 0, 0)).to.be.revertedWithCustomError(stakeManager, "AccessControlUnauthorizedAccount");
+
+          await stakeManager.grantRole(await stakeManager.SWAP_ROLE(), swap.address);
+
+          await expect(stakeManager.connect(swap).depositForValidator(ZERO_ADDRESS, 0, 0)).to.be.revertedWith("CratStakeManager: 0x00");
+          await expect(stakeManager.connect(swap).depositForValidator(validator1, 0, 0)).to.be.revertedWith("CratStakeManager: wrong vesting end");
+          await expect(stakeManager.connect(swap).depositForValidator(validator1, 0, await time.latest() + 300)).to.be.revertedWith("CratStakeManager: wrong input amount");
+          await expect(stakeManager.connect(swap).depositForValidator(validator1, 0, await time.latest() + 300, {value: ethers.parseEther('99.9')})).to.be.revertedWith("CratStakeManager: wrong input amount");
+          await stakeManager.setValidatorsLimit(0);
+          await expect(stakeManager.connect(swap).depositForValidator(validator1, 0, await time.latest() + 300, {value: ethers.parseEther('100')})).to.be.revertedWith("CratStakeManager: limit reached");
+          await stakeManager.setValidatorsLimit(101);
+
+          let vestingEnd = await time.latest() + 86400*30;
+
+          await stakeManager.connect(swap).depositForValidator(validator1, 0, vestingEnd, {value: ethers.parseEther('100')});
+          let stakeTime = await time.latest();
+          let validatorInfo = await stakeManager.getValidatorInfo(validator1);
+          assert.equal(validatorInfo.amount, ethers.parseEther('100'));
+          assert.equal(validatorInfo.commission, 0);
+          assert.equal(validatorInfo.lastClaim, stakeTime);
+          assert.equal(validatorInfo.calledForWithdraw, 0);
+          assert.equal(validatorInfo.vestingEnd, vestingEnd);
+          assert.equal(validatorInfo.fixedReward.apr, 1500);
+          assert.equal(validatorInfo.fixedReward.lastUpdate, stakeTime);
+          assert.equal(validatorInfo.fixedReward.fixedReward, 0);
+          assert.equal(validatorInfo.variableReward, 0);
+          assert.equal(validatorInfo.delegatedAmount, 0);
+          assert.equal(validatorInfo.stoppedDelegatedAmount, 0);
+          assert.equal(validatorInfo.delegatorsAcc, 0);
+          assert.equal(validatorInfo.delegators.length, 0);
+
+          // second deposit for this validator
+          await expect(stakeManager.connect(swap).depositForValidator(validator1, 1, vestingEnd - 1)).to.be.revertedWith("CratStakeManager: wrong vesting end");
+
+          await stakeManager.connect(swap).depositForValidator(validator1, 1, vestingEnd + 1, {value: ethers.parseEther('1')});
+
+          validatorInfo = await stakeManager.getValidatorInfo(validator1);
+          assert.equal(validatorInfo.amount, ethers.parseEther('101'));
+          assert.equal(validatorInfo.commission, 0);
+          assert.equal(validatorInfo.lastClaim, stakeTime);
+          assert.equal(validatorInfo.calledForWithdraw, 0);
+          assert.equal(validatorInfo.vestingEnd, vestingEnd + 1);
+
+          // revert for delegator
+          await stakeManager.depositAsDelegator(validator1, {value: ethers.parseEther('10')});
+          await expect(stakeManager.connect(swap).depositForValidator(owner, 0, await time.latest() + 300, {value: ethers.parseEther('100')})).to.be.revertedWith("CratStakeManager: validators only");
+
+          // can not early withdraw (till the vesting end)
+          await stakeManager.connect(validator1).validatorCallForWithdraw();
+          validatorInfo = await stakeManager.getValidatorInfo(validator1);
+          assert.equal(validatorInfo.calledForWithdraw, await time.latest());
+
+          await time.increase(time.duration.days(14));
+
+          assert.isBelow(validatorInfo.calledForWithdraw + (await stakeManager.settings()).validatorsSettings.withdrawCooldown, await time.latest());
+
+          await expect(stakeManager.connect(validator1).withdrawAsValidator()).to.be.revertedWith("CratStakeManager: withdraw cooldown");
         })
     })
 });

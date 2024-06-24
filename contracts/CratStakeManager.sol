@@ -13,6 +13,7 @@ contract CratStakeManager is
     using EnumerableSet for EnumerableSet.AddressSet;
 
     bytes32 public constant DISTRIBUTOR_ROLE = keccak256("DISTRIBUTOR_ROLE");
+    bytes32 public constant SWAP_ROLE = keccak256("SWAP_ROLE");
     uint256 public constant PRECISION = 100_00;
     uint256 public constant YEAR_DURATION = 365 days;
     uint256 private constant _ACCURACY = 10 ** 18;
@@ -36,6 +37,7 @@ contract CratStakeManager is
         uint256 commission;
         uint256 lastClaim;
         uint256 calledForWithdraw;
+        uint256 vestingEnd;
         FixedReward fixedReward;
         uint256 variableReward;
         uint256 delegatedAmount;
@@ -78,6 +80,26 @@ contract CratStakeManager is
         uint256 claimCooldown;
         uint256 withdrawCooldown;
     }
+
+    event ValidatorDeposited(
+        address validator,
+        uint256 amount,
+        uint256 commission
+    );
+    event ValidatorClaimed(address validator, uint256 amount);
+    event ValidatorCalledForWithdraw(address validator);
+    event ValidatorRevived(address validator);
+    event ValidatorWithdrawed(address validator);
+
+    event DelegatorDeposited(
+        address delegator,
+        address validator,
+        uint256 amount
+    );
+    event DelegatorClaimed(address delegator, uint256 amount);
+    event DelegatorCalledForWithdraw(address delegator);
+    event DelegatorRevived(address delegator);
+    event DelegatorWithdrawed(address delegator);
 
     receive() external payable {
         forFixedReward += msg.value;
@@ -346,6 +368,41 @@ contract CratStakeManager is
         if (total > 0) _safeTransferETH(settings.slashReceiver, total);
     }
 
+    // swap contract methods
+
+    function depositForValidator(
+        address sender,
+        uint256 commission,
+        uint256 vestingEnd
+    ) external payable onlyRole(SWAP_ROLE) nonReentrant {
+        require(sender != address(0), "CratStakeManager: 0x00");
+        require(
+            vestingEnd > block.timestamp &&
+                _validatorInfo[sender].vestingEnd <= vestingEnd,
+            "CratStakeManager: wrong vesting end"
+        );
+
+        _validatorInfo[sender].vestingEnd = vestingEnd;
+
+        uint256 amount = msg.value;
+
+        require(
+            amount + _validatorInfo[sender].amount >=
+                settings.validatorsSettings.minimumThreshold &&
+                amount > 0,
+            "CratStakeManager: wrong input amount"
+        );
+        if (!_validators.contains(sender))
+            require(
+                _validators.length() < settings.validatorsLimit,
+                "CratStakeManager: limit reached"
+            );
+
+        require(!isDelegator(sender), "CratStakeManager: validators only");
+
+        _depositAsValidator(sender, amount, commission);
+    }
+
     // public methods
 
     function depositAsValidator(
@@ -445,7 +502,8 @@ contract CratStakeManager is
             _validatorInfo[sender].calledForWithdraw > 0 &&
                 _validatorInfo[sender].calledForWithdraw +
                     settings.validatorsSettings.withdrawCooldown <=
-                block.timestamp,
+                block.timestamp &&
+                _validatorInfo[sender].vestingEnd <= block.timestamp,
             "CratStakeManager: withdraw cooldown"
         );
 
@@ -458,6 +516,8 @@ contract CratStakeManager is
             amount += _delegatorInfo[delegators[i]].amount;
             delete _delegatorInfo[delegators[i]];
             _safeTransferETH(delegators[i], amount);
+
+            emit DelegatorWithdrawed(delegators[i]);
         }
 
         amount = _claimAsValidator(sender);
@@ -468,6 +528,8 @@ contract CratStakeManager is
 
         delete _validatorInfo[sender];
         _safeTransferETH(sender, amount);
+
+        emit ValidatorWithdrawed(sender);
     }
 
     function withdrawAsDelegator() external nonReentrant {
@@ -511,6 +573,8 @@ contract CratStakeManager is
 
         delete _delegatorInfo[sender];
         _safeTransferETH(sender, amount);
+
+        emit DelegatorWithdrawed(sender);
     }
 
     function reviveAsValidator() external payable nonReentrant {
@@ -564,6 +628,8 @@ contract CratStakeManager is
         _validatorInfo[sender].stoppedDelegatedAmount -= totalMigratedAmount;
         totalDelegatorsPool += totalMigratedAmount;
         _validatorInfo[sender].delegatedAmount += totalMigratedAmount;
+
+        emit ValidatorRevived(sender);
     }
 
     function reviveAsDelegator() external payable nonReentrant {
@@ -591,6 +657,8 @@ contract CratStakeManager is
             .delegatorsSettings
             .apr;
         delete _delegatorInfo[sender].calledForWithdraw;
+
+        emit DelegatorRevived(sender);
     }
 
     // view methods
@@ -678,6 +746,7 @@ contract CratStakeManager is
             uint256 commission,
             uint256 lastClaim,
             uint256 calledForWithdraw,
+            uint256 vestingEnd,
             FixedReward memory fixedReward,
             uint256 variableReward,
             uint256 delegatedAmount,
@@ -690,6 +759,7 @@ contract CratStakeManager is
         commission = _validatorInfo[validator].commission;
         lastClaim = _validatorInfo[validator].lastClaim;
         calledForWithdraw = _validatorInfo[validator].calledForWithdraw;
+        vestingEnd = _validatorInfo[validator].vestingEnd;
         fixedReward = _validatorInfo[validator].fixedReward;
         variableReward = _validatorInfo[validator].variableReward;
         delegatedAmount = _validatorInfo[validator].delegatedAmount;
@@ -764,6 +834,12 @@ contract CratStakeManager is
         }
         _validatorInfo[validator].amount += amount;
         totalValidatorsPool += amount;
+
+        emit ValidatorDeposited(
+            validator,
+            amount,
+            _validatorInfo[validator].commission
+        );
     }
 
     function _depositAsDelegator(
@@ -795,6 +871,8 @@ contract CratStakeManager is
         _delegatorInfo[delegator].amount += amount;
         _validatorInfo[validator].delegatedAmount += amount;
         totalDelegatorsPool += amount;
+
+        emit DelegatorDeposited(delegator, validator, amount);
     }
 
     function _claimAsValidator(
@@ -824,6 +902,8 @@ contract CratStakeManager is
             delete _validatorInfo[validator].fixedReward.fixedReward;
             delete _validatorInfo[validator].variableReward;
         }
+
+        emit ValidatorClaimed(validator, toClaim);
     }
 
     function _claimAsDelegator(
@@ -852,6 +932,8 @@ contract CratStakeManager is
             delete _delegatorInfo[delegator].fixedReward.fixedReward;
             delete _delegatorInfo[delegator].variableReward.variableReward;
         }
+
+        emit DelegatorClaimed(delegator, toClaim);
     }
 
     function _validatorCallForWithdraw(address sender) internal {
@@ -869,6 +951,8 @@ contract CratStakeManager is
         _validatorInfo[sender].stoppedDelegatedAmount += _validatorInfo[sender]
             .delegatedAmount;
         delete _validatorInfo[sender].delegatedAmount;
+
+        emit ValidatorCalledForWithdraw(sender);
     }
 
     function _delegatorCallForWithdraw(address sender) internal {
@@ -886,6 +970,8 @@ contract CratStakeManager is
                 sender
             ].amount;
         }
+
+        emit DelegatorCalledForWithdraw(sender);
     }
 
     function _safeTransferETH(address _to, uint256 _value) internal {
