@@ -3,7 +3,7 @@ const {ethers} = require("hardhat");
 const {DISTRIBUTOR, RECEIVER} = process.env;
 
 async function main() {
-  const CratStakeManager = await ethers.getContractFactory("CratStakeManagerTest");
+  const CratStakeManager = await ethers.getContractFactory("CratD2CStakeManagerTest");
 
   const AdminComp = require("@openzeppelin/upgrades-core/artifacts/@openzeppelin/contracts-v5/proxy/transparent/ProxyAdmin.sol/ProxyAdmin.json");
   const TUPComp = require("@openzeppelin/upgrades-core/artifacts/@openzeppelin/contracts-v5/proxy/transparent/TransparentUpgradeableProxy.sol/TransparentUpgradeableProxy.json");
