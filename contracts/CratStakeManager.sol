@@ -12,18 +12,36 @@ contract CratD2CStakeManager is
 {
     using EnumerableSet for EnumerableSet.AddressSet;
 
+    /// @notice value of the distributor role
     bytes32 public constant DISTRIBUTOR_ROLE = keccak256("DISTRIBUTOR_ROLE");
+
+    /// @notice value of the swap contract role
     bytes32 public constant SWAP_ROLE = keccak256("SWAP_ROLE");
+
+    /// @notice denominator for percent calculations
     uint256 public constant PRECISION = 100_00;
+
+    /// @notice year duration in seconds
     uint256 public constant YEAR_DURATION = 365 days;
+
     uint256 private constant _ACCURACY = 10 ** 18;
 
+    /// @notice global contract settings
     GeneralSettings public settings;
 
+    /// @notice total validators counter
     uint256 public totalValidatorsPool;
+
+    /// @notice total delegators counter
     uint256 public totalDelegatorsPool;
+
+    /// @notice sum of stopped validators' deposits
     uint256 public stoppedValidatorsPool;
+
+    /// @notice sum of stopped delegators' deposits
     uint256 public stoppedDelegatorsPool;
+
+    /// @notice sum of tokens available to distribute for fixed rewards
     uint256 public forFixedReward;
 
     EnumerableSet.AddressSet private _validators; // list of all active validators
@@ -134,6 +152,10 @@ contract CratD2CStakeManager is
 
     // admin methods
 
+    /** @notice change slash receiver address
+     * @param receiver new slash receiver address
+     * @dev only admin
+     */
     function setSlashReceiver(
         address receiver
     ) external onlyRole(DEFAULT_ADMIN_ROLE) {
@@ -141,6 +163,10 @@ contract CratD2CStakeManager is
         settings.slashReceiver = receiver;
     }
 
+    /** @notice change validators limit
+     * @param value new validators limit
+     * @dev only admin
+     */
     function setValidatorsLimit(
         uint256 value
     ) external onlyRole(DEFAULT_ADMIN_ROLE) {
@@ -148,36 +174,60 @@ contract CratD2CStakeManager is
         settings.validatorsLimit = value;
     }
 
+    /** @notice change validators' withdraw cooldown
+     * @param value new time peroid duration
+     * @dev only admin
+     */
     function setValidatorsWithdrawCooldown(
         uint256 value
     ) external onlyRole(DEFAULT_ADMIN_ROLE) {
         settings.validatorsSettings.withdrawCooldown = value;
     }
 
+    /** @notice change delegators' withdraw cooldown
+     * @param value new time peroid duration
+     * @dev only admin
+     */
     function setDelegatorsWithdrawCooldown(
         uint256 value
     ) external onlyRole(DEFAULT_ADMIN_ROLE) {
         settings.delegatorsSettings.withdrawCooldown = value;
     }
 
+    /** @notice change validators' minimum amount to deposit
+     * @param value new minimum amount
+     * @dev only admin
+     */
     function setValidatorsMinimum(
         uint256 value
     ) external onlyRole(DEFAULT_ADMIN_ROLE) {
         settings.validatorsSettings.minimumThreshold = value;
     }
 
+    /** @notice change delegators' minimum amount to deposit
+     * @param value new minimum amount
+     * @dev only admin
+     */
     function setDelegatorsMinimum(
         uint256 value
     ) external onlyRole(DEFAULT_ADMIN_ROLE) {
         settings.delegatorsSettings.minimumThreshold = value;
     }
 
+    /** @notice change validators' token amount to slash (to substract from their deposit)
+     * @param value new slash token amount
+     * @dev only admin
+     */
     function setValidatorsAmountToSlash(
         uint256 value
     ) external onlyRole(DEFAULT_ADMIN_ROLE) {
         settings.validatorsSettings.toSlash = value;
     }
 
+    /** @notice change delegators' percent to slash (to substract that percent of their deposit)
+     * @param value new slash percent of the deposit
+     * @dev only admin
+     */
     function setDelegatorsPercToSlash(
         uint256 value
     ) external onlyRole(DEFAULT_ADMIN_ROLE) {
@@ -185,30 +235,50 @@ contract CratD2CStakeManager is
         settings.delegatorsSettings.toSlash = value;
     }
 
+    /** @notice change validators' fixed APR
+     * @param value new apr value
+     * @dev only admin
+     */
     function setValidatorsAPR(
         uint256 value
     ) external onlyRole(DEFAULT_ADMIN_ROLE) {
         settings.validatorsSettings.apr = value;
     }
 
+    /** @notice change delegators' fixed APR
+     * @param value new apr value
+     * @dev only admin
+     */
     function setDelegatorsAPR(
         uint256 value
     ) external onlyRole(DEFAULT_ADMIN_ROLE) {
         settings.delegatorsSettings.apr = value;
     }
 
+    /** @notice change validators' claim cooldown
+     * @param value new time peroid duration
+     * @dev only admin
+     */
     function setValidatorsClaimCooldown(
         uint256 value
     ) external onlyRole(DEFAULT_ADMIN_ROLE) {
         settings.validatorsSettings.claimCooldown = value;
     }
 
+    /** @notice change delegators' claim cooldown
+     * @param value new time peroid duration
+     * @dev only admin
+     */
     function setDelegatorsClaimCooldown(
         uint256 value
     ) external onlyRole(DEFAULT_ADMIN_ROLE) {
         settings.delegatorsSettings.claimCooldown = value;
     }
 
+    /** @notice withdraw excess reward coins from {forFixedReward} pool
+     * @param amount token amount
+     * @dev only admin
+     */
     function withdrawExcessFixedReward(
         uint256 amount
     ) external onlyRole(DEFAULT_ADMIN_ROLE) nonReentrant {
@@ -219,6 +289,11 @@ contract CratD2CStakeManager is
 
     // distributor methods
 
+    /** @notice distribute rewards to validators (and their delegators automatically)
+     * @param validators an array of validator addresses
+     * @param amounts an array of reward amounts
+     * @dev only depositor
+     */
     function distributeRewards(
         address[] calldata validators,
         uint256[] calldata amounts
@@ -263,6 +338,10 @@ contract CratD2CStakeManager is
             _safeTransferETH(_msgSender(), msg.value - totalReward); // send excess coins back
     }
 
+    /** @notice slash validators (and their delegators automatically)
+     * @param validators an array of validator addresses
+     * @dev only depositor
+     */
     function slash(
         address[] calldata validators
     ) external onlyRole(DISTRIBUTOR_ROLE) nonReentrant {
@@ -370,6 +449,12 @@ contract CratD2CStakeManager is
 
     // swap contract methods
 
+    /** @notice make deposit for exact user as validator
+     * @param sender address of future validator
+     * @param commission percent that this validator will give to delegators
+     * @param vestingEnd timestamp of the vesting funds process end
+     * @dev swap role only
+     */
     function depositForValidator(
         address sender,
         uint256 commission,
@@ -405,6 +490,9 @@ contract CratD2CStakeManager is
 
     // public methods
 
+    /** @notice make deposit as validator
+     * @param commission percent that this validator will give to delegators
+     */
     function depositAsValidator(
         uint256 commission
     ) external payable nonReentrant {
@@ -428,6 +516,9 @@ contract CratD2CStakeManager is
         _depositAsValidator(sender, amount, commission);
     }
 
+    /** @notice make deposit as delegator
+     * @param validator address chosen
+     */
     function depositAsDelegator(
         address validator
     ) external payable nonReentrant {
@@ -445,6 +536,8 @@ contract CratD2CStakeManager is
         _depositAsDelegator(sender, amount, validator);
     }
 
+
+    /// @notice claim rewards earned
     function claim() external nonReentrant {
         address sender = _msgSender();
         bool _isValidator = isValidator(sender);
@@ -458,6 +551,7 @@ contract CratD2CStakeManager is
         if (reward > 0) _safeTransferETH(sender, reward);
     }
 
+    /// @notice restake rewards earned (claim + deposit)
     function restake() external nonReentrant {
         address sender = _msgSender();
         bool _isValidator = isValidator(sender);
@@ -474,6 +568,7 @@ contract CratD2CStakeManager is
         else _depositAsDelegator(sender, reward, address(0)); // not set zero validator address, but keeps previous value
     }
 
+    /// @notice sign up to a stop list as validator (will be able to withdraw deposit after cooldown)
     function validatorCallForWithdraw() external nonReentrant {
         address sender = _msgSender();
         require(
@@ -485,6 +580,7 @@ contract CratD2CStakeManager is
         _validatorCallForWithdraw(sender);
     }
 
+    /// @notice sign up to a stop list as delegator (will be able to withdraw deposit after cooldown)
     function delegatorCallForWithdraw() external nonReentrant {
         address sender = _msgSender();
         require(
@@ -496,6 +592,7 @@ contract CratD2CStakeManager is
         _delegatorCallForWithdraw(sender);
     }
 
+    /// @notice withdraw deposit as validator (after cooldown; removes all its delegators automatically)
     function withdrawAsValidator() external nonReentrant {
         address sender = _msgSender();
         require(
@@ -532,6 +629,7 @@ contract CratD2CStakeManager is
         emit ValidatorWithdrawed(sender);
     }
 
+    /// @notice withdraw deposit as delegator (after cooldown)
     function withdrawAsDelegator() external nonReentrant {
         address sender = _msgSender();
         uint256 calledForWithdraw;
@@ -577,6 +675,7 @@ contract CratD2CStakeManager is
         emit DelegatorWithdrawed(sender);
     }
 
+    /// @notice exit the stop list as validator (increase your deposit, if necessary)
     function reviveAsValidator() external payable nonReentrant {
         address sender = _msgSender();
         require(
@@ -632,6 +731,7 @@ contract CratD2CStakeManager is
         emit ValidatorRevived(sender);
     }
 
+    /// @notice exit the stop list as delegator (increase your deposit, if necessary)
     function reviveAsDelegator() external payable nonReentrant {
         address sender = _msgSender();
         require(
@@ -663,6 +763,11 @@ contract CratD2CStakeManager is
 
     // view methods
 
+    /** @notice view-method to get validator's earned amounts
+     * @param validator address
+     * @return fixedReward amount (apr)
+     * @return variableReward amount (from distributor)
+     */
     function validatorEarned(
         address validator
     ) public view returns (uint256 fixedReward, uint256 variableReward) {
@@ -676,6 +781,11 @@ contract CratD2CStakeManager is
         variableReward = _validatorInfo[validator].variableReward;
     }
 
+    /** @notice view-method to get delegators's earned amounts
+     * @param delegator address
+     * @return fixedReward amount (apr)
+     * @return variableReward amount (from distributed to validator)
+     */
     function delegatorEarned(
         address delegator
     ) public view returns (uint256 fixedReward, uint256 variableReward) {
@@ -695,15 +805,27 @@ contract CratD2CStakeManager is
             _ACCURACY;
     }
 
+    /** @notice view-method to get account status
+     * @param account address
+     * @return true - if the account is a validator (even if stop-listed), else - false
+     */
     function isValidator(address account) public view returns (bool) {
         return (_validators.contains(account) ||
             _stopListValidators.contains(account));
     }
 
+    /** @notice view-method to get account status
+     * @param account address
+     * @return true - if the account is a delegator (even if stop-listed), else - false
+     */
     function isDelegator(address account) public view returns (bool) {
         return _delegatorInfo[account].validator != address(0) ? true : false;
     }
 
+    /** @notice view-method to get the list of all active validators and their deposited/voted amounts
+     * @return validators an array of the active validators addresses
+     * @return amounts an array of following uint256[3] arrays - [validators deposit, delegated amount for this validator (from active delegators), delegated amount for this validator (from stop-listed delegators)]
+     */
     function getActiveValidators()
         external
         view
@@ -720,6 +842,10 @@ contract CratD2CStakeManager is
         }
     }
 
+    /** @notice view-method to get the list of all stop-listed validators and their deposited/voted amounts
+     * @return validators an array of the active validators addresses
+     * @return amounts an array of following uint256[3] arrays - [validators deposit, delegated amount for this validator (from active delegators), delegated amount for this validator (from stop-listed delegators)]
+     */
     function getStoppedValidators()
         external
         view
@@ -736,6 +862,20 @@ contract CratD2CStakeManager is
         }
     }
 
+    /** @notice view-method to get validator info
+     * @param validator address
+     * @return amount of validator's deposit
+     * @return commission percent that validator gives to its delegators
+     * @return lastClaim previous claim timestamp
+     * @return calledForWithdraw timestamp of #callForWithdrawAsValidator transaction (0 - if validator is active)
+     * @return vestingEnd timestamp of the vesting funds process end
+     * @return fixedReward struct with [apr - APR percent, lastUpdate - timestamp of last reward calculation, fixedReward - already calculated fixed reward] fields
+     * @return variableReward calculated variable reward amount
+     * @return delegatedAmount sum of active delegators deposits
+     * @return stoppedDelegatedAmount sum of stopped delegators deposits
+     * @return delegatorsAcc variable reward accumulator value for delegators
+     * @return delegators an array of delegators' addresses list (even if someone is stopped)
+     */
     function getValidatorInfo(
         address validator
     )
@@ -769,6 +909,16 @@ contract CratD2CStakeManager is
         delegators = _validatorInfo[validator].delegators.values();
     }
 
+    /** view-method to get delegator info
+     * @param delegator address
+     * @return : 
+     * validator address
+     * deposited amount
+     * previous claim timestamp
+     * timestamp of #callForWithdrawAsDelegator transaction (0 - if validator is active)
+     * struct with [apr - APR percent, lastUpdate - timestamp of last reward calculation, fixedReward - already calculated fixed reward] fields
+     * struct with [storedAcc - last updated variable reward accumulator, variableReward - already calculated variable reward]
+     */
     function getDelegatorInfo(
         address delegator
     ) external view returns (DelegatorInfo memory) {
