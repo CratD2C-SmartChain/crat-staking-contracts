@@ -21,6 +21,9 @@ contract CratD2CVesting is AccessControl, ReentrancyGuard {
         uint256[8] shedule;
     }
 
+    event DistributionStarted(address[10] allocators);
+    event Claimed(address allocator, uint256 amount);
+
     constructor(address _admin) {
         require(_admin != address(0), "CratD2CVesting: 0x00");
         _grantRole(DEFAULT_ADMIN_ROLE, _admin);
@@ -28,6 +31,10 @@ contract CratD2CVesting is AccessControl, ReentrancyGuard {
 
     // admin methods
 
+    /** @notice initial allocators set-up
+     * @param allocators an array of receiver addresses of the allocation
+     * @dev only admin
+     */
     function startDistribution(
         address[10] memory allocators
     ) external payable onlyRole(DEFAULT_ADMIN_ROLE) {
@@ -142,8 +149,15 @@ contract CratD2CVesting is AccessControl, ReentrancyGuard {
             1_410000000000000000000000,
             3_066600000000000000000000
         ];
+
+        emit DistributionStarted(allocators);
     }
 
+    /** @notice partially claim available tokens
+     * @param to receiver addresses of the allocation
+     * @param amount token amount
+     * @dev only admin
+     */
     function claim(
         address to,
         uint256 amount
@@ -156,6 +170,10 @@ contract CratD2CVesting is AccessControl, ReentrancyGuard {
         _claim(to, amount);
     }
 
+    /** @notice claim all available tokens
+     * @param to receiver addresses of the allocation
+     * @dev only admin
+     */
     function claimAll(
         address to
     ) external onlyRole(DEFAULT_ADMIN_ROLE) nonReentrant {
@@ -166,6 +184,10 @@ contract CratD2CVesting is AccessControl, ReentrancyGuard {
 
     // view methods
 
+    /** @notice view-method to get amount of available tokens for user
+     * @param user address
+     * @return unlocked token amount
+     */
     function pending(address user) public view returns (uint256 unlocked) {
         if (_startYear == 0 || !_addressToInfo[user].hasShedule) return 0;
 
@@ -182,6 +204,12 @@ contract CratD2CVesting is AccessControl, ReentrancyGuard {
             _addressToInfo[user].claimed;
     }
 
+    /** @notice view-method to get user's shedule
+     * @param account address
+     * @return hasShedule true - has shedule, else - false
+     * @return claimed already claimed token amount
+     * @return shedule an array of percents
+     */
     function getAddressInfo(
         address account
     )
@@ -196,6 +224,8 @@ contract CratD2CVesting is AccessControl, ReentrancyGuard {
         );
     }
 
+    /** @notice view-method to get an array of allocation receivers' addresses
+     */
     function getAllocationAddresses()
         external
         view
@@ -209,6 +239,8 @@ contract CratD2CVesting is AccessControl, ReentrancyGuard {
     function _claim(address to, uint256 amount) internal {
         _addressToInfo[to].claimed += amount;
         _safeTransferETH(to, amount);
+
+        emit Claimed(to, amount);
     }
 
     function _safeTransferETH(address _to, uint256 _value) internal {
