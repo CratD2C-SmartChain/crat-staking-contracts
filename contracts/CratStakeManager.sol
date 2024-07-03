@@ -44,6 +44,9 @@ contract CratD2CStakeManager is
     /// @notice sum of tokens available to distribute for fixed rewards
     uint256 public forFixedReward;
 
+    TotalRewardsDistributed private _totalValidatorsRewards;
+    TotalRewardsDistributed private _totalDelegatorsRewards;
+
     EnumerableSet.AddressSet private _validators; // list of all active validators
     EnumerableSet.AddressSet private _stopListValidators; // waiting pool before `withdrawAsValidator`
 
@@ -57,7 +60,7 @@ contract CratD2CStakeManager is
         uint256 calledForWithdraw;
         uint256 vestingEnd;
         FixedReward fixedReward;
-        uint256 variableReward;
+        VariableReward variableReward;
         uint256 delegatedAmount;
         uint256 stoppedDelegatedAmount;
         uint256 delegatorsAcc;
@@ -70,18 +73,24 @@ contract CratD2CStakeManager is
         uint256 lastClaim;
         uint256 calledForWithdraw;
         FixedReward fixedReward;
-        VariableReward variableReward;
+        DelegatorsVariableReward variableReward;
     }
 
     struct FixedReward {
         uint256 apr;
         uint256 lastUpdate;
         uint256 fixedReward;
+        uint256 totalClaimed;
+    }
+
+    struct DelegatorsVariableReward {
+        uint256 storedAcc;
+        VariableReward variableReward;
     }
 
     struct VariableReward {
-        uint256 storedAcc;
         uint256 variableReward;
+        uint256 totalClaimed;
     }
 
     struct GeneralSettings {
@@ -97,6 +106,12 @@ contract CratD2CStakeManager is
         uint256 minimumThreshold;
         uint256 claimCooldown;
         uint256 withdrawCooldown;
+    }
+
+    struct TotalRewardsDistributed {
+        uint256 variableReward;
+        uint256 fixedLastUpdate;
+        uint256 fixedReward;
     }
 
     event ValidatorDeposited(
@@ -148,6 +163,9 @@ contract CratD2CStakeManager is
         _grantRole(DEFAULT_ADMIN_ROLE, _msgSender());
         if (_distributor != address(0))
             _grantRole(DISTRIBUTOR_ROLE, _distributor);
+
+        _totalValidatorsRewards.fixedLastUpdate = block.timestamp;
+        _totalDelegatorsRewards.fixedLastUpdate = block.timestamp;
     }
 
     // admin methods
@@ -170,7 +188,10 @@ contract CratD2CStakeManager is
     function setValidatorsLimit(
         uint256 value
     ) external onlyRole(DEFAULT_ADMIN_ROLE) {
-        require(value >= _validators.length(), "CratD2CStakeManager: wrong limit");
+        require(
+            value >= _validators.length(),
+            "CratD2CStakeManager: wrong limit"
+        );
         settings.validatorsLimit = value;
     }
 
@@ -242,6 +263,7 @@ contract CratD2CStakeManager is
     function setValidatorsAPR(
         uint256 value
     ) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        _updateFixedValidatorsReward();
         settings.validatorsSettings.apr = value;
     }
 
@@ -252,6 +274,7 @@ contract CratD2CStakeManager is
     function setDelegatorsAPR(
         uint256 value
     ) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        _updateFixedDelegatorsReward();
         settings.delegatorsSettings.apr = value;
     }
 
@@ -282,7 +305,10 @@ contract CratD2CStakeManager is
     function withdrawExcessFixedReward(
         uint256 amount
     ) external onlyRole(DEFAULT_ADMIN_ROLE) nonReentrant {
-        require(forFixedReward >= amount, "CratD2CStakeManager: not enough coins");
+        require(
+            forFixedReward >= amount,
+            "CratD2CStakeManager: not enough coins"
+        );
         forFixedReward -= amount;
         _safeTransferETH(_msgSender(), amount);
     }
@@ -305,6 +331,8 @@ contract CratD2CStakeManager is
         );
 
         uint256 totalReward;
+        uint256 totalValidatorsReward;
+        uint256 totalDelegatorsReward;
         uint256 fee;
 
         for (uint256 i; i < len; i++) {
@@ -324,16 +352,27 @@ contract CratD2CStakeManager is
                             _validatorInfo[validators[i]]
                                 .stoppedDelegatedAmount);
                 }
-                _validatorInfo[validators[i]].variableReward +=
+                _validatorInfo[validators[i]].variableReward.variableReward +=
                     amounts[i] -
                     fee;
-                totalReward += amounts[i];
+
+                totalDelegatorsReward += fee;
+                totalValidatorsReward += amounts[i] - fee;
 
                 delete fee;
             }
         }
 
-        require(msg.value >= totalReward, "CratD2CStakeManager: not enough coins");
+        totalReward = totalDelegatorsReward + totalValidatorsReward;
+
+        require(
+            msg.value >= totalReward,
+            "CratD2CStakeManager: not enough coins"
+        );
+
+        _totalValidatorsRewards.variableReward += totalValidatorsReward;
+        _totalDelegatorsRewards.variableReward += totalDelegatorsReward;
+
         if (msg.value > totalReward)
             _safeTransferETH(_msgSender(), msg.value - totalReward); // send excess coins back
     }
@@ -535,7 +574,6 @@ contract CratD2CStakeManager is
 
         _depositAsDelegator(sender, amount, validator);
     }
-
 
     /// @notice claim rewards earned
     function claim() external nonReentrant {
@@ -778,7 +816,9 @@ contract CratD2CStakeManager is
                 _validatorInfo[validator].amount *
                 _validatorInfo[validator].fixedReward.apr) /
             (YEAR_DURATION * PRECISION);
-        variableReward = _validatorInfo[validator].variableReward;
+        variableReward = _validatorInfo[validator]
+            .variableReward
+            .variableReward;
     }
 
     /** @notice view-method to get delegators's earned amounts
@@ -797,7 +837,10 @@ contract CratD2CStakeManager is
                 _delegatorInfo[delegator].fixedReward.apr) /
             (YEAR_DURATION * PRECISION);
         variableReward =
-            _delegatorInfo[delegator].variableReward.variableReward +
+            _delegatorInfo[delegator]
+                .variableReward
+                .variableReward
+                .variableReward +
             ((_validatorInfo[_delegatorInfo[delegator].validator]
                 .delegatorsAcc -
                 _delegatorInfo[delegator].variableReward.storedAcc) *
@@ -888,7 +931,7 @@ contract CratD2CStakeManager is
             uint256 calledForWithdraw,
             uint256 vestingEnd,
             FixedReward memory fixedReward,
-            uint256 variableReward,
+            VariableReward memory variableReward,
             uint256 delegatedAmount,
             uint256 stoppedDelegatedAmount,
             uint256 delegatorsAcc,
@@ -911,7 +954,7 @@ contract CratD2CStakeManager is
 
     /** view-method to get delegator info
      * @param delegator address
-     * @return : 
+     * @return :
      * validator address
      * deposited amount
      * previous claim timestamp
@@ -925,9 +968,66 @@ contract CratD2CStakeManager is
         return _delegatorInfo[delegator];
     }
 
+    /** view-method to approximately calculate total distributed rewards for validators
+     * @return fixedReward total distributed
+     * @return variableReward total distributed
+     */
+    function totalValidatorsRewards()
+        external
+        view
+        returns (uint256 fixedReward, uint256 variableReward)
+    {
+        variableReward = _totalValidatorsRewards.variableReward;
+        fixedReward = _fixedValidatorsReward();
+    }
+
+    /** view-method to approximately calculate total distributed rewards for delegators
+     * @return fixedReward total distributed
+     * @return variableReward total distributed
+     */
+    function totalDelegatorsRewards()
+        external
+        view
+        returns (uint256 fixedReward, uint256 variableReward)
+    {
+        variableReward = _totalDelegatorsRewards.variableReward;
+        fixedReward = _fixedDelegatorsReward();
+    }
+
+    /** view-method to exactly calculate total distributed rewards for current validator
+     * @param validator address
+     * @return fixedReward total distributed
+     * @return variableReward total distributed
+     */
+    function totalValidatorReward(
+        address validator
+    ) external view returns (uint256 fixedReward, uint256 variableReward) {
+        (fixedReward, variableReward) = validatorEarned(validator);
+        fixedReward += _validatorInfo[validator].fixedReward.totalClaimed;
+        variableReward += _validatorInfo[validator].variableReward.totalClaimed;
+    }
+
+    /** view-method to exactly calculate total distributed rewards for current delegator
+     * @param delegator address
+     * @return fixedReward total distributed
+     * @return variableReward total distributed
+     */
+    function totalDelegatorReward(
+        address delegator
+    ) external view returns (uint256 fixedReward, uint256 variableReward) {
+        (fixedReward, variableReward) = delegatorEarned(delegator);
+        fixedReward += _delegatorInfo[delegator].fixedReward.totalClaimed;
+        variableReward += _delegatorInfo[delegator]
+            .variableReward
+            .variableReward
+            .totalClaimed;
+    }
+
     // internal methods
 
     function _updateValidatorReward(address validator) internal {
+        _updateFixedValidatorsReward();
+
         // store fixed reward
         (_validatorInfo[validator].fixedReward.fixedReward, ) = validatorEarned(
             validator
@@ -942,10 +1042,15 @@ contract CratD2CStakeManager is
     }
 
     function _updateDelegatorReward(address delegator) internal {
+        _updateFixedDelegatorsReward();
+
         // store fixed & variable rewards
         (
             _delegatorInfo[delegator].fixedReward.fixedReward,
-            _delegatorInfo[delegator].variableReward.variableReward
+            _delegatorInfo[delegator]
+                .variableReward
+                .variableReward
+                .variableReward
         ) = delegatorEarned(delegator);
         _delegatorInfo[delegator].fixedReward.lastUpdate = _rightBoarder(
             delegator,
@@ -1038,7 +1143,11 @@ contract CratD2CStakeManager is
         );
 
         forFixedReward -= toClaim;
-        toClaim += _validatorInfo[validator].variableReward;
+        _validatorInfo[validator].fixedReward.totalClaimed += toClaim;
+        toClaim += _validatorInfo[validator].variableReward.variableReward;
+        _validatorInfo[validator].variableReward.totalClaimed += _validatorInfo[
+            validator
+        ].variableReward.variableReward;
 
         if (toClaim > 0) {
             require(
@@ -1050,7 +1159,7 @@ contract CratD2CStakeManager is
 
             _validatorInfo[validator].lastClaim = block.timestamp;
             delete _validatorInfo[validator].fixedReward.fixedReward;
-            delete _validatorInfo[validator].variableReward;
+            delete _validatorInfo[validator].variableReward.variableReward;
         }
 
         emit ValidatorClaimed(validator, toClaim);
@@ -1069,7 +1178,18 @@ contract CratD2CStakeManager is
         );
 
         forFixedReward -= toClaim;
-        toClaim += _delegatorInfo[delegator].variableReward.variableReward;
+        _delegatorInfo[delegator].fixedReward.totalClaimed += toClaim;
+        toClaim += _delegatorInfo[delegator]
+            .variableReward
+            .variableReward
+            .variableReward;
+        _delegatorInfo[delegator]
+            .variableReward
+            .variableReward
+            .totalClaimed += _delegatorInfo[delegator]
+            .variableReward
+            .variableReward
+            .variableReward;
 
         if (toClaim > 0) {
             require(
@@ -1080,7 +1200,10 @@ contract CratD2CStakeManager is
             );
             _delegatorInfo[delegator].lastClaim = block.timestamp;
             delete _delegatorInfo[delegator].fixedReward.fixedReward;
-            delete _delegatorInfo[delegator].variableReward.variableReward;
+            delete _delegatorInfo[delegator]
+                .variableReward
+                .variableReward
+                .variableReward;
         }
 
         emit DelegatorClaimed(delegator, toClaim);
@@ -1124,6 +1247,20 @@ contract CratD2CStakeManager is
         emit DelegatorCalledForWithdraw(sender);
     }
 
+    function _updateFixedValidatorsReward() internal {
+        if (_totalValidatorsRewards.fixedLastUpdate < block.timestamp) {
+            _totalValidatorsRewards.fixedReward = _fixedValidatorsReward();
+            _totalValidatorsRewards.fixedLastUpdate = block.timestamp;
+        }
+    }
+
+    function _updateFixedDelegatorsReward() internal {
+        if (_totalDelegatorsRewards.fixedLastUpdate < block.timestamp) {
+            _totalDelegatorsRewards.fixedReward = _fixedDelegatorsReward();
+            _totalDelegatorsRewards.fixedLastUpdate = block.timestamp;
+        }
+    }
+
     function _safeTransferETH(address _to, uint256 _value) internal {
         (bool success, ) = _to.call{value: _value}(new bytes(0));
         require(success, "CratD2CStakeManager: native transfer failed");
@@ -1157,5 +1294,23 @@ contract CratD2CStakeManager is
                 return _delegatorInfo[account].calledForWithdraw;
             else return block.timestamp;
         }
+    }
+
+    function _fixedValidatorsReward() internal view returns (uint256) {
+        return
+            _totalValidatorsRewards.fixedReward +
+            ((block.timestamp - _totalValidatorsRewards.fixedLastUpdate) *
+                totalValidatorsPool *
+                settings.validatorsSettings.apr) /
+            (PRECISION * YEAR_DURATION);
+    }
+
+    function _fixedDelegatorsReward() internal view returns (uint256) {
+        return
+            _totalDelegatorsRewards.fixedReward +
+            ((block.timestamp - _totalDelegatorsRewards.fixedLastUpdate) *
+                totalDelegatorsPool *
+                settings.delegatorsSettings.apr) /
+            (PRECISION * YEAR_DURATION);
     }
 }

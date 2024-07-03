@@ -24,9 +24,14 @@ module.exports = {
   },
   networks: {
     // hardhat: {}
+    // cratTestnet: {
+    //   url: "http://142.132.143.240:8545/",
+    //   chainId: 22618,
+    //   accounts: [PRIVATE_KEY]
+    // }
     cratTestnet: {
-      url: "http://142.132.143.240:8545/",
-      chainId: 22618,
+      url: "http://162.55.102.39:8545/",
+      chainId: 35711,
       accounts: [PRIVATE_KEY]
     }
   },
