@@ -600,7 +600,7 @@ describe("CratD2CStakeManager", function () {
 
             await expect(stakeManager.connect(validator1).withdrawAsValidator()).to.be.revertedWith("CratD2CStakeManager: withdraw cooldown");
             let fixedReward = BigInt(v1CalledForWithdraw - d1Start) * BigInt(13) * ethers.parseEther('10') / BigInt(100*86400*365);
-            await expect(stakeManager.connect(delegator1).withdrawAsDelegator()).to.changeEtherBalances([delegator1, stakeManager], [ethers.parseEther('10') + d1Earned[1] + fixedReward, -(ethers.parseEther('10') + d1Earned[1] + fixedReward)]);
+            await expect(stakeManager.withdrawForDelegator(delegator1)).to.changeEtherBalances([delegator1, stakeManager], [ethers.parseEther('10') + d1Earned[1] + fixedReward, -(ethers.parseEther('10') + d1Earned[1] + fixedReward)]);
             assert.equal(await stakeManager.forFixedReward(), fixedRewardPool - fixedReward);
             delegatorInfo = await stakeManager.getDelegatorInfo(delegator1);
             assert.equal(delegatorInfo.validator, ZERO_ADDRESS);
@@ -794,7 +794,7 @@ describe("CratD2CStakeManager", function () {
           assert.equal(await stakeManager.stoppedValidatorsPool(), 0);
           assert.equal(await stakeManager.stoppedDelegatorsPool(), ethers.parseEther('36.575')); // (30*0.95) * 0.95 + 9.5
 
-          await expect(stakeManager.connect(validator1).withdrawAsValidator()).to.changeEtherBalances([stakeManager, validator1, delegator1, owner], [-(ownerReward[0] + ownerReward[1] + ethers.parseEther('27.075')), 0, ethers.parseEther('9.025'), ownerReward[0] + ownerReward[1] + ethers.parseEther('18.05')]);
+          await expect(stakeManager.withdrawForValidator(validator1)).to.changeEtherBalances([stakeManager, validator1, delegator1, owner], [-(ownerReward[0] + ownerReward[1] + ethers.parseEther('27.075')), 0, ethers.parseEther('9.025'), ownerReward[0] + ownerReward[1] + ethers.parseEther('18.05')]);
         })
 
         it("Revive mechanics", async ()=> {

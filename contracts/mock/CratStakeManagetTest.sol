@@ -6,7 +6,7 @@ import "@openzeppelin/contracts/utils/structs/EnumerableSet.sol";
 import "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/utils/ReentrancyGuardUpgradeable.sol";
 
-contract CratD2CStakeManager is
+contract CratD2CStakeManagerTest is
     AccessControlUpgradeable,
     ReentrancyGuardUpgradeable
 {

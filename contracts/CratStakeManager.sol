@@ -632,85 +632,22 @@ contract CratD2CStakeManager is
 
     /// @notice withdraw deposit as validator (after cooldown; removes all its delegators automatically)
     function withdrawAsValidator() external nonReentrant {
-        address sender = _msgSender();
-        require(
-            _validatorInfo[sender].calledForWithdraw > 0 &&
-                _validatorInfo[sender].calledForWithdraw +
-                    settings.validatorsSettings.withdrawCooldown <=
-                block.timestamp &&
-                _validatorInfo[sender].vestingEnd <= block.timestamp,
-            "CratD2CStakeManager: withdraw cooldown"
-        );
-
-        address[] memory delegators = _validatorInfo[sender]
-            .delegators
-            .values();
-        uint256 amount;
-        for (uint256 i; i < delegators.length; i++) {
-            amount = _claimAsDelegator(delegators[i]);
-            amount += _delegatorInfo[delegators[i]].amount;
-            delete _delegatorInfo[delegators[i]];
-            _safeTransferETH(delegators[i], amount);
-
-            emit DelegatorWithdrawed(delegators[i]);
-        }
-
-        amount = _claimAsValidator(sender);
-        amount += _validatorInfo[sender].amount;
-        stoppedValidatorsPool -= _validatorInfo[sender].amount;
-        stoppedDelegatorsPool -= _validatorInfo[sender].stoppedDelegatedAmount;
-        _stopListValidators.remove(sender);
-
-        delete _validatorInfo[sender];
-        _safeTransferETH(sender, amount);
-
-        emit ValidatorWithdrawed(sender);
+        _withdrawAsValidator(_msgSender());
     }
 
     /// @notice withdraw deposit as delegator (after cooldown)
     function withdrawAsDelegator() external nonReentrant {
-        address sender = _msgSender();
-        uint256 calledForWithdraw;
-        if (
-            _delegatorInfo[sender].calledForWithdraw > 0 &&
-            _validatorInfo[_delegatorInfo[sender].validator].calledForWithdraw >
-            0
-        ) {
-            calledForWithdraw = Math.min(
-                _delegatorInfo[sender].calledForWithdraw,
-                _validatorInfo[_delegatorInfo[sender].validator]
-                    .calledForWithdraw
-            );
-        } else if (_delegatorInfo[sender].calledForWithdraw > 0) {
-            calledForWithdraw = _delegatorInfo[sender].calledForWithdraw;
-        } else if (
-            _validatorInfo[_delegatorInfo[sender].validator].calledForWithdraw >
-            0
-        ) {
-            calledForWithdraw = _validatorInfo[_delegatorInfo[sender].validator]
-                .calledForWithdraw;
-        } else revert("CratD2CStakeManager: no call for withdraw");
+        _withdrawAsDelegator(_msgSender());
+    }
 
-        require(
-            calledForWithdraw + settings.delegatorsSettings.withdrawCooldown <=
-                block.timestamp,
-            "CratD2CStakeManager: withdraw cooldown"
-        );
+    /// @notice withdraw deposit for current validator (after cooldown; removes all its delegators automatically)
+    function withdrawForValidator(address validator) external nonReentrant {
+        _withdrawAsValidator(validator);
+    }
 
-        uint256 amount = _claimAsDelegator(sender);
-        amount += _delegatorInfo[sender].amount;
-
-        stoppedDelegatorsPool -= _delegatorInfo[sender].amount;
-        _validatorInfo[_delegatorInfo[sender].validator]
-            .stoppedDelegatedAmount -= _delegatorInfo[sender].amount;
-        _validatorInfo[_delegatorInfo[sender].validator].delegators.remove(
-            sender
-        );
-
-        delete _delegatorInfo[sender];
-        _safeTransferETH(sender, amount);
-
-        emit DelegatorWithdrawed(sender);
+    /// @notice withdraw deposit for current delegator (after cooldown)
+    function withdrawForDelegator(address delegator) external nonReentrant {
+        _withdrawAsDelegator(delegator);
     }
 
     /// @notice exit the stop list as validator (increase your deposit, if necessary)
@@ -1245,6 +1182,88 @@ contract CratD2CStakeManager is
         }
 
         emit DelegatorCalledForWithdraw(sender);
+    }
+
+    function _withdrawAsValidator(address validator) internal {
+        require(
+            _validatorInfo[validator].calledForWithdraw > 0 &&
+                _validatorInfo[validator].calledForWithdraw +
+                    settings.validatorsSettings.withdrawCooldown <=
+                block.timestamp &&
+                _validatorInfo[validator].vestingEnd <= block.timestamp,
+            "CratD2CStakeManager: withdraw cooldown"
+        );
+
+        address[] memory delegators = _validatorInfo[validator]
+            .delegators
+            .values();
+        uint256 amount;
+        for (uint256 i; i < delegators.length; i++) {
+            amount = _claimAsDelegator(delegators[i]);
+            amount += _delegatorInfo[delegators[i]].amount;
+            delete _delegatorInfo[delegators[i]];
+            _safeTransferETH(delegators[i], amount);
+
+            emit DelegatorWithdrawed(delegators[i]);
+        }
+
+        amount = _claimAsValidator(validator);
+        amount += _validatorInfo[validator].amount;
+        stoppedValidatorsPool -= _validatorInfo[validator].amount;
+        stoppedDelegatorsPool -= _validatorInfo[validator]
+            .stoppedDelegatedAmount;
+        _stopListValidators.remove(validator);
+
+        delete _validatorInfo[validator];
+        _safeTransferETH(validator, amount);
+
+        emit ValidatorWithdrawed(validator);
+    }
+
+    function _withdrawAsDelegator(address delegator) internal {
+        uint256 calledForWithdraw;
+        if (
+            _delegatorInfo[delegator].calledForWithdraw > 0 &&
+            _validatorInfo[_delegatorInfo[delegator].validator]
+                .calledForWithdraw >
+            0
+        ) {
+            calledForWithdraw = Math.min(
+                _delegatorInfo[delegator].calledForWithdraw,
+                _validatorInfo[_delegatorInfo[delegator].validator]
+                    .calledForWithdraw
+            );
+        } else if (_delegatorInfo[delegator].calledForWithdraw > 0) {
+            calledForWithdraw = _delegatorInfo[delegator].calledForWithdraw;
+        } else if (
+            _validatorInfo[_delegatorInfo[delegator].validator]
+                .calledForWithdraw > 0
+        ) {
+            calledForWithdraw = _validatorInfo[
+                _delegatorInfo[delegator].validator
+            ].calledForWithdraw;
+        } else revert("CratD2CStakeManager: no call for withdraw");
+
+        require(
+            calledForWithdraw + settings.delegatorsSettings.withdrawCooldown <=
+                block.timestamp,
+            "CratD2CStakeManager: withdraw cooldown"
+        );
+
+        uint256 amount = _claimAsDelegator(delegator);
+        amount += _delegatorInfo[delegator].amount;
+
+        stoppedDelegatorsPool -= _delegatorInfo[delegator].amount;
+        _validatorInfo[_delegatorInfo[delegator].validator]
+            .stoppedDelegatedAmount -= _delegatorInfo[delegator].amount;
+        _validatorInfo[_delegatorInfo[delegator].validator].delegators.remove(
+            delegator
+        );
+
+        delete _delegatorInfo[delegator];
+        _safeTransferETH(delegator, amount);
+
+        emit DelegatorWithdrawed(delegator);
     }
 
     function _updateFixedValidatorsReward() internal {
