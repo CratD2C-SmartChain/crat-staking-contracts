@@ -8,14 +8,14 @@ const Web3 = require("web3");
 
 const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000";
   
-describe("CratD2CVesting", function () {
+describe("CratVesting", function () {
     async function deployFixture() {
         const [owner, earlyAdoptors, royalties, ico, CTVG, ieo, team, liquidity, airdrop, manualDistribution] = await ethers.getSigners();
 
-        const vesting = await ethers.deployContract("CratD2CVesting", [owner]);
+        const vesting = await ethers.deployContract("CratVesting", [owner]);
     
-        const CratD2CStakeManager = await ethers.getContractFactory("CratD2CStakeManager");
-        const stakeManager = await upgrades.deployProxy(CratD2CStakeManager, [owner.address, owner.address]);
+        const CratStakeManager = await ethers.getContractFactory("CratStakeManager");
+        const stakeManager = await upgrades.deployProxy(CratStakeManager, [owner.address, owner.address]);
 
         await ethers.provider.send("hardhat_setBalance", [owner.address, "0x" + ethers.parseEther("300001000").toString(16)]);
     
@@ -63,9 +63,9 @@ describe("CratD2CVesting", function () {
             await expect(vesting.connect(ico).claim(ZERO_ADDRESS, 0)).to.be.revertedWithCustomError(vesting, "AccessControlUnauthorizedAccount");
             await expect(vesting.connect(ico).claimAll(ZERO_ADDRESS)).to.be.revertedWithCustomError(vesting, "AccessControlUnauthorizedAccount");
 
-            await expect(vesting.claim(owner, 0)).to.be.revertedWith("CratD2CVesting: wrong amount");
-            await expect(vesting.claim(owner, 1)).to.be.revertedWith("CratD2CVesting: wrong amount");
-            await expect(vesting.claimAll(owner)).to.be.revertedWith("CratD2CVesting: nothing to claim");
+            await expect(vesting.claim(owner, 0)).to.be.revertedWith("CratVesting: wrong amount");
+            await expect(vesting.claim(owner, 1)).to.be.revertedWith("CratVesting: wrong amount");
+            await expect(vesting.claimAll(owner)).to.be.revertedWith("CratVesting: nothing to claim");
 
             await expect(vesting.startDistribution([
                 ZERO_ADDRESS,
@@ -78,7 +78,7 @@ describe("CratD2CVesting", function () {
                 ZERO_ADDRESS,
                 ZERO_ADDRESS,
                 ZERO_ADDRESS
-            ])).to.be.revertedWith("CratD2CVesting: wrong vesting supply");
+            ])).to.be.revertedWith("CratVesting: wrong vesting supply");
 
             await expect(vesting.startDistribution([
                 ZERO_ADDRESS,
@@ -91,7 +91,7 @@ describe("CratD2CVesting", function () {
                 ZERO_ADDRESS,
                 ZERO_ADDRESS,
                 ZERO_ADDRESS
-            ], {value: ethers.parseEther('300000000')})).to.be.revertedWith("CratD2CVesting: 0x00");
+            ], {value: ethers.parseEther('300000000')})).to.be.revertedWith("CratVesting: 0x00");
         })
 
         it("Vesting shedule (claim every period)", async ()=> {
@@ -157,7 +157,7 @@ describe("CratD2CVesting", function () {
                         assert.equal(info.shedule[6], ethers.parseEther('4590000'));
                         assert.equal(info.shedule[7], ethers.parseEther('7000000'));
                         assert.equal(await vesting.pending(allocators[i]), 0);
-                        await expect(vesting.claimAll(allocators[i])).to.be.revertedWith("CratD2CVesting: nothing to claim");
+                        await expect(vesting.claimAll(allocators[i])).to.be.revertedWith("CratVesting: nothing to claim");
                         break;
                     case 2:
                         assert.equal(info.shedule[0], "6666666666666666666666666");
@@ -189,7 +189,7 @@ describe("CratD2CVesting", function () {
                         assert.equal(info.shedule[6], ethers.parseEther('500000'));
                         assert.equal(info.shedule[7], ethers.parseEther('1600000'));
                         assert.equal(await vesting.pending(allocators[i]), 0);
-                        await expect(vesting.claimAll(allocators[i])).to.be.revertedWith("CratD2CVesting: nothing to claim");
+                        await expect(vesting.claimAll(allocators[i])).to.be.revertedWith("CratVesting: nothing to claim");
                         break;
                     case 4:
                         assert.equal(info.shedule[0], ethers.parseEther('1000000'));
@@ -253,7 +253,7 @@ describe("CratD2CVesting", function () {
                         assert.equal(info.shedule[6], ethers.parseEther('2000000'));
                         assert.equal(info.shedule[7], ethers.parseEther('1500000'));
                         assert.equal(await vesting.pending(allocators[i]), 0);
-                        await expect(vesting.claimAll(allocators[i])).to.be.revertedWith("CratD2CVesting: nothing to claim");
+                        await expect(vesting.claimAll(allocators[i])).to.be.revertedWith("CratVesting: nothing to claim");
                         break;
                     case 8:
                         assert.equal(info.shedule[0], ethers.parseEther('250000'));
@@ -281,7 +281,7 @@ describe("CratD2CVesting", function () {
                         assert.equal(info.shedule[6], ethers.parseEther('1410000'));
                         assert.equal(info.shedule[7], ethers.parseEther('3066600'));
                         assert.equal(await vesting.pending(allocators[i]), 0);
-                        await expect(vesting.claimAll(allocators[i])).to.be.revertedWith("CratD2CVesting: nothing to claim");
+                        await expect(vesting.claimAll(allocators[i])).to.be.revertedWith("CratVesting: nothing to claim");
                         break;
                 }
             }
@@ -640,7 +640,7 @@ describe("CratD2CVesting", function () {
             // partially claim
             assert.equal(await vesting.pending(earlyAdoptors), ethers.parseEther('5127000'));
 
-            await expect(vesting.claim(earlyAdoptors, ethers.parseEther('6000000'))).to.be.revertedWith("CratD2CVesting: wrong amount");
+            await expect(vesting.claim(earlyAdoptors, ethers.parseEther('6000000'))).to.be.revertedWith("CratVesting: wrong amount");
             await expect(vesting.claim(earlyAdoptors, ethers.parseEther('1'))).to.changeEtherBalances([vesting, earlyAdoptors], [-ethers.parseEther('1'), ethers.parseEther('1')]);
             assert.equal(await vesting.pending(earlyAdoptors), ethers.parseEther('5127000') - ethers.parseEther('1'));
 
@@ -652,7 +652,7 @@ describe("CratD2CVesting", function () {
         })
 
         it("Other branches", async ()=> {
-            await expect(ethers.deployContract("CratD2CVesting", [ZERO_ADDRESS])).to.be.revertedWith("CratD2CVesting: 0x00");
+            await expect(ethers.deployContract("CratVesting", [ZERO_ADDRESS])).to.be.revertedWith("CratVesting: 0x00");
         })
     })
 })

@@ -5,7 +5,7 @@ import "@openzeppelin/contracts/access/AccessControl.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import "@quant-finance/solidity-datetime/contracts/DateTime.sol";
 
-contract CratD2CVesting is AccessControl, ReentrancyGuard {
+contract CratVesting is AccessControl, ReentrancyGuard {
     uint256 public constant PRECISION = 10 ** 26;
     uint256 public constant TOTAL_SUPPLY = 300_000_000 * 10 ** 18;
 
@@ -25,7 +25,7 @@ contract CratD2CVesting is AccessControl, ReentrancyGuard {
     event Claimed(address allocator, uint256 amount);
 
     constructor(address _admin) {
-        require(_admin != address(0), "CratD2CVesting: 0x00");
+        require(_admin != address(0), "CratVesting: 0x00");
         _grantRole(DEFAULT_ADMIN_ROLE, _admin);
     }
 
@@ -38,14 +38,14 @@ contract CratD2CVesting is AccessControl, ReentrancyGuard {
     function startDistribution(
         address[10] memory allocators
     ) external payable onlyRole(DEFAULT_ADMIN_ROLE) {
-        require(msg.value == TOTAL_SUPPLY, "CratD2CVesting: wrong vesting supply");
+        require(msg.value == TOTAL_SUPPLY, "CratVesting: wrong vesting supply");
         _startYear = 2024;
         _endYear = 2038;
 
         _allocators = allocators;
 
         for (uint256 i; i < 10; i++) {
-            require(allocators[i] != address(0), "CratD2CVesting: 0x00");
+            require(allocators[i] != address(0), "CratVesting: 0x00");
             _addressToInfo[allocators[i]].hasShedule = true;
         }
 
@@ -165,7 +165,7 @@ contract CratD2CVesting is AccessControl, ReentrancyGuard {
         uint256 totalPending = pending(to);
         require(
             totalPending >= amount && amount > 0,
-            "CratD2CVesting: wrong amount"
+            "CratVesting: wrong amount"
         );
         _claim(to, amount);
     }
@@ -178,7 +178,7 @@ contract CratD2CVesting is AccessControl, ReentrancyGuard {
         address to
     ) external onlyRole(DEFAULT_ADMIN_ROLE) nonReentrant {
         uint256 totalPending = pending(to);
-        require(totalPending > 0, "CratD2CVesting: nothing to claim");
+        require(totalPending > 0, "CratVesting: nothing to claim");
         _claim(to, totalPending);
     }
 
@@ -245,6 +245,6 @@ contract CratD2CVesting is AccessControl, ReentrancyGuard {
 
     function _safeTransferETH(address _to, uint256 _value) internal {
         (bool success, ) = _to.call{value: _value}(new bytes(0));
-        require(success, "CratD2CVesting: native transfer failed");
+        require(success, "CratVesting: native transfer failed");
     }
 }
