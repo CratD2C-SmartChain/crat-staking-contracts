@@ -6,7 +6,7 @@ import "@openzeppelin/contracts/utils/structs/EnumerableSet.sol";
 import "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/utils/ReentrancyGuardUpgradeable.sol";
 
-contract CratStakeManager is
+contract CRATStakeManager is
     AccessControlUpgradeable,
     ReentrancyGuardUpgradeable
 {
@@ -142,7 +142,7 @@ contract CratStakeManager is
         address _distributor,
         address _receiver
     ) public initializer {
-        require(_receiver != address(0), "CratStakeManager: 0x00");
+        require(_receiver != address(0), "CRATStakeManager: 0x00");
 
         __AccessControl_init();
         __ReentrancyGuard_init();
@@ -177,7 +177,7 @@ contract CratStakeManager is
     function setSlashReceiver(
         address receiver
     ) external onlyRole(DEFAULT_ADMIN_ROLE) {
-        require(receiver != address(0), "CratStakeManager: 0x00");
+        require(receiver != address(0), "CRATStakeManager: 0x00");
         settings.slashReceiver = receiver;
     }
 
@@ -190,7 +190,7 @@ contract CratStakeManager is
     ) external onlyRole(DEFAULT_ADMIN_ROLE) {
         require(
             value >= _validators.length(),
-            "CratStakeManager: wrong limit"
+            "CRATStakeManager: wrong limit"
         );
         settings.validatorsLimit = value;
     }
@@ -252,7 +252,7 @@ contract CratStakeManager is
     function setDelegatorsPercToSlash(
         uint256 value
     ) external onlyRole(DEFAULT_ADMIN_ROLE) {
-        require(value <= PRECISION, "CratStakeManager: wrong percent");
+        require(value <= PRECISION, "CRATStakeManager: wrong percent");
         settings.delegatorsSettings.toSlash = value;
     }
 
@@ -307,7 +307,7 @@ contract CratStakeManager is
     ) external onlyRole(DEFAULT_ADMIN_ROLE) nonReentrant {
         require(
             forFixedReward >= amount,
-            "CratStakeManager: not enough coins"
+            "CRATStakeManager: not enough coins"
         );
         forFixedReward -= amount;
         _safeTransferETH(_msgSender(), amount);
@@ -327,7 +327,7 @@ contract CratStakeManager is
         uint256 len = validators.length;
         require(
             amounts.length == len && len > 0,
-            "CratStakeManager: wrong length"
+            "CRATStakeManager: wrong length"
         );
 
         uint256 totalReward;
@@ -367,7 +367,7 @@ contract CratStakeManager is
 
         require(
             msg.value >= totalReward,
-            "CratStakeManager: not enough coins"
+            "CRATStakeManager: not enough coins"
         );
 
         _totalValidatorsRewards.variableReward += totalValidatorsReward;
@@ -499,11 +499,11 @@ contract CratStakeManager is
         uint256 commission,
         uint256 vestingEnd
     ) external payable onlyRole(SWAP_ROLE) nonReentrant {
-        require(sender != address(0), "CratStakeManager: 0x00");
+        require(sender != address(0), "CRATStakeManager: 0x00");
         require(
             vestingEnd > block.timestamp &&
                 _validatorInfo[sender].vestingEnd <= vestingEnd,
-            "CratStakeManager: wrong vesting end"
+            "CRATStakeManager: wrong vesting end"
         );
 
         _validatorInfo[sender].vestingEnd = vestingEnd;
@@ -514,15 +514,15 @@ contract CratStakeManager is
             amount + _validatorInfo[sender].amount >=
                 settings.validatorsSettings.minimumThreshold &&
                 amount > 0,
-            "CratStakeManager: wrong input amount"
+            "CRATStakeManager: wrong input amount"
         );
         if (!_validators.contains(sender))
             require(
                 _validators.length() < settings.validatorsLimit,
-                "CratStakeManager: limit reached"
+                "CRATStakeManager: limit reached"
             );
 
-        require(!isDelegator(sender), "CratStakeManager: validators only");
+        require(!isDelegator(sender), "CRATStakeManager: validators only");
 
         _depositAsValidator(sender, amount, commission);
     }
@@ -542,15 +542,15 @@ contract CratStakeManager is
             amount + _validatorInfo[sender].amount >=
                 settings.validatorsSettings.minimumThreshold &&
                 amount > 0,
-            "CratStakeManager: wrong input amount"
+            "CRATStakeManager: wrong input amount"
         );
         if (!_validators.contains(sender))
             require(
                 _validators.length() < settings.validatorsLimit,
-                "CratStakeManager: limit reached"
+                "CRATStakeManager: limit reached"
             );
 
-        require(!isDelegator(sender), "CratStakeManager: validators only");
+        require(!isDelegator(sender), "CRATStakeManager: validators only");
 
         _depositAsValidator(sender, amount, commission);
     }
@@ -564,12 +564,12 @@ contract CratStakeManager is
         uint256 amount = msg.value;
         address sender = _msgSender();
 
-        require(!isValidator(sender), "CratStakeManager: delegators only");
+        require(!isValidator(sender), "CRATStakeManager: delegators only");
         require(
             amount > 0 &&
                 _delegatorInfo[sender].amount + amount >=
                 settings.delegatorsSettings.minimumThreshold,
-            "CratStakeManager: wrong input amount"
+            "CRATStakeManager: wrong input amount"
         );
 
         _depositAsDelegator(sender, amount, validator);
@@ -581,7 +581,7 @@ contract CratStakeManager is
         bool _isValidator = isValidator(sender);
         require(
             _isValidator || isDelegator(sender),
-            "CratStakeManager: not registered"
+            "CRATStakeManager: not registered"
         );
         uint256 reward;
         if (_isValidator) reward = _claimAsValidator(sender);
@@ -595,12 +595,12 @@ contract CratStakeManager is
         bool _isValidator = isValidator(sender);
         require(
             _isValidator || isDelegator(sender),
-            "CratStakeManager: not registered"
+            "CRATStakeManager: not registered"
         );
         uint256 reward;
         if (_isValidator) reward = _claimAsValidator(sender);
         else reward = _claimAsDelegator(sender);
-        require(reward > 0, "CratStakeManager: nothing to restake");
+        require(reward > 0, "CRATStakeManager: nothing to restake");
         if (_isValidator)
             _depositAsValidator(sender, reward, 0); // not set zero commission, but keeps previous value
         else _depositAsDelegator(sender, reward, address(0)); // not set zero validator address, but keeps previous value
@@ -612,7 +612,7 @@ contract CratStakeManager is
         require(
             isValidator(sender) &&
                 _validatorInfo[sender].calledForWithdraw == 0,
-            "CratStakeManager: not active validator"
+            "CRATStakeManager: not active validator"
         );
 
         _validatorCallForWithdraw(sender);
@@ -624,7 +624,7 @@ contract CratStakeManager is
         require(
             isDelegator(sender) &&
                 _delegatorInfo[sender].calledForWithdraw == 0,
-            "CratStakeManager: not active delegator"
+            "CRATStakeManager: not active delegator"
         );
 
         _delegatorCallForWithdraw(sender);
@@ -655,16 +655,16 @@ contract CratStakeManager is
         address sender = _msgSender();
         require(
             isValidator(sender) && _validatorInfo[sender].calledForWithdraw > 0,
-            "CratStakeManager: no withdraw call"
+            "CRATStakeManager: no withdraw call"
         );
         require(
             _validatorInfo[sender].amount + msg.value >=
                 settings.validatorsSettings.minimumThreshold,
-            "CratStakeManager: too low value"
+            "CRATStakeManager: too low value"
         );
         require(
             _validators.length() < settings.validatorsLimit,
-            "CratStakeManager: limit reached"
+            "CRATStakeManager: limit reached"
         );
 
         // revive validator and his non-called for withdraw delegators
@@ -717,7 +717,7 @@ contract CratStakeManager is
                 _validatorInfo[_delegatorInfo[sender].validator]
                     .calledForWithdraw ==
                 0,
-            "CratStakeManager: can not revive"
+            "CRATStakeManager: can not revive"
         );
 
         stoppedDelegatorsPool -= _delegatorInfo[sender].amount;
@@ -1008,7 +1008,7 @@ contract CratStakeManager is
     ) internal {
         require(
             _validatorInfo[validator].calledForWithdraw == 0,
-            "CratStakeManager: in stop list"
+            "CRATStakeManager: in stop list"
         );
 
         // update rewards
@@ -1017,7 +1017,7 @@ contract CratStakeManager is
         if (!_validators.contains(validator)) {
             require(
                 commission <= PRECISION,
-                "CratStakeManager: too high commission"
+                "CRATStakeManager: too high commission"
             );
 
             _validatorInfo[validator].commission = commission; // do not allow change commission value once validator has been registered
@@ -1041,7 +1041,7 @@ contract CratStakeManager is
     ) internal {
         require(
             _delegatorInfo[delegator].calledForWithdraw == 0,
-            "CratStakeManager: in stop list"
+            "CRATStakeManager: in stop list"
         );
 
         if (!isDelegator(delegator)) {
@@ -1054,7 +1054,7 @@ contract CratStakeManager is
 
         require(
             _validators.contains(validator),
-            "CratStakeManager: wrong validator"
+            "CRATStakeManager: wrong validator"
         ); // necessary to choose only active validator (even if validator choosen before)
 
         // update delegator rewards before amount will be changed
@@ -1076,7 +1076,7 @@ contract CratStakeManager is
 
         require(
             forFixedReward >= toClaim,
-            "CratStakeManager: not enough coins for fixed rewards"
+            "CRATStakeManager: not enough coins for fixed rewards"
         );
 
         forFixedReward -= toClaim;
@@ -1091,7 +1091,7 @@ contract CratStakeManager is
                 _validatorInfo[validator].lastClaim +
                     settings.validatorsSettings.claimCooldown <=
                     block.timestamp,
-                "CratStakeManager: claim cooldown"
+                "CRATStakeManager: claim cooldown"
             );
 
             _validatorInfo[validator].lastClaim = block.timestamp;
@@ -1111,7 +1111,7 @@ contract CratStakeManager is
 
         require(
             forFixedReward >= toClaim,
-            "CratStakeManager: not enough coins for fixed rewards"
+            "CRATStakeManager: not enough coins for fixed rewards"
         );
 
         forFixedReward -= toClaim;
@@ -1133,7 +1133,7 @@ contract CratStakeManager is
                 _delegatorInfo[delegator].lastClaim +
                     settings.delegatorsSettings.claimCooldown <=
                     block.timestamp,
-                "CratStakeManager: claim cooldown"
+                "CRATStakeManager: claim cooldown"
             );
             _delegatorInfo[delegator].lastClaim = block.timestamp;
             delete _delegatorInfo[delegator].fixedReward.fixedReward;
@@ -1191,7 +1191,7 @@ contract CratStakeManager is
                     settings.validatorsSettings.withdrawCooldown <=
                 block.timestamp &&
                 _validatorInfo[validator].vestingEnd <= block.timestamp,
-            "CratStakeManager: withdraw cooldown"
+            "CRATStakeManager: withdraw cooldown"
         );
 
         address[] memory delegators = _validatorInfo[validator]
@@ -1242,12 +1242,12 @@ contract CratStakeManager is
             calledForWithdraw = _validatorInfo[
                 _delegatorInfo[delegator].validator
             ].calledForWithdraw;
-        } else revert("CratStakeManager: no call for withdraw");
+        } else revert("CRATStakeManager: no call for withdraw");
 
         require(
             calledForWithdraw + settings.delegatorsSettings.withdrawCooldown <=
                 block.timestamp,
-            "CratStakeManager: withdraw cooldown"
+            "CRATStakeManager: withdraw cooldown"
         );
 
         uint256 amount = _claimAsDelegator(delegator);
@@ -1282,7 +1282,7 @@ contract CratStakeManager is
 
     function _safeTransferETH(address _to, uint256 _value) internal {
         (bool success, ) = _to.call{value: _value}(new bytes(0));
-        require(success, "CratStakeManager: native transfer failed");
+        require(success, "CRATStakeManager: native transfer failed");
     }
 
     // internal view methods

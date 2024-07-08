@@ -3,7 +3,7 @@ const {ethers} = require("hardhat");
 const {OWNER} = process.env;
 
 async function main() {
-  const vesting = await ethers.deployContract("CratVestingTest", [OWNER], {gasLimit: 8000000})
+  const vesting = await ethers.deployContract("CRATVestingTest", [OWNER], {gasLimit: 8000000})
   console.log("Vesting deployed: ", vesting.target);
 }
 
