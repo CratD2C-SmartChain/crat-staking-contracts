@@ -1399,6 +1399,16 @@ describe("CRATStakeManager", function () {
           assert.equal(delegatorInfo.delegatorPerValidatorArr[0].variableReward.variableReward, reward / BigInt(20));
           assert.equal(delegatorInfo.delegatorPerValidatorArr[0].variableReward.totalClaimed, 0);
 
+          let rewards = await stakeManager.delegatorEarnedPerValidators(delegator1, [validator1, validator2, owner]);
+          assert.equal(rewards.fixedRewards.length, 3);
+          assert.equal(rewards.variableRewards.length, 3);
+          assert.equal(rewards.fixedRewards[0], delegatorInfo.delegatorPerValidatorArr[0].fixedReward.fixedReward);
+          assert.equal(rewards.fixedRewards[1], ethers.parseEther('10') * BigInt(14) * BigInt(v2CalledForWithdraw - start2) / BigInt(100 * time.duration.years(1)));
+          assert.equal(rewards.fixedRewards[2], ethers.parseEther('10') * BigInt(14) * BigInt(await time.latest() - startOwner1) / BigInt(100*time.duration.years(1)));
+          assert.equal(rewards.variableRewards[0], reward / BigInt(20));
+          assert.equal(rewards.variableRewards[1], 0);
+          assert.equal(rewards.variableRewards[2], 0);
+
           assert.equal(await stakeManager.totalDelegatorsPool(), ethers.parseEther('20'));
           assert.equal(await stakeManager.stoppedDelegatorsPool(), ethers.parseEther('10') + ethers.parseEther('10') * BigInt(95) / BigInt(100));
 

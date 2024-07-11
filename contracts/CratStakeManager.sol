@@ -808,11 +808,40 @@ contract CRATStakeManager is
     function delegatorEarnedPerValidator(
         address delegator,
         address validator
-    ) public view returns (uint256 fixedReward, uint256 variableReward) {
+    ) external view returns (uint256 fixedReward, uint256 variableReward) {
         (fixedReward, variableReward) = _delegatorEarnedPerValidator(
             delegator,
             validator
         );
+    }
+
+    /** @notice view-method to get delegators's earned amounts for several validators
+     * @param delegator address
+     * @param validatorsArr validators addresses
+     * @return fixedRewards earned array
+     * @return variableRewards earned array
+     */
+    function delegatorEarnedPerValidators(
+        address delegator,
+        address[] calldata validatorsArr
+    )
+        external
+        view
+        returns (
+            uint256[] memory fixedRewards,
+            uint256[] memory variableRewards
+        )
+    {
+        uint256 len = validatorsArr.length;
+        fixedRewards = new uint256[](len);
+        variableRewards = new uint256[](len);
+
+        for (uint256 i; i < len; i++) {
+            (
+                fixedRewards[i],
+                variableRewards[i]
+            ) = _delegatorEarnedPerValidator(delegator, validatorsArr[i]);
+        }
     }
 
     /** @notice view-method to get account status
