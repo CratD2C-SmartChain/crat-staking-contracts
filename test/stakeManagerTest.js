@@ -1476,6 +1476,8 @@ describe("CRATStakeManager", function () {
           assert.equal(delegatorInfo.delegatorPerValidatorArr[0].fixedReward.totalClaimed, 0);
           assert.equal(delegatorInfo.delegatorPerValidatorArr[0].variableReward.variableReward, 0);
           assert.equal(delegatorInfo.delegatorPerValidatorArr[0].variableReward.totalClaimed, 0);
+
+          assert.equal(await stakeManager.isDelegator(delegator1), true); // still delegator
         })
     })
 });

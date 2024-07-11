@@ -578,6 +578,8 @@ contract CRATStakeManager is
         _depositAsDelegator(sender, amount, validator);
     }
 
+    /** @notice claim rewards as validator
+     */
     function claimAsValidator() external nonReentrant {
         address sender = _msgSender();
         require(isValidator(sender), "CRATStakeManager: not validator");
@@ -585,6 +587,9 @@ contract CRATStakeManager is
         if (reward > 0) _safeTransferETH(sender, reward);
     }
 
+    /** @notice claim rewards as delegator (earned for certain validators deposit)
+     * @param validator certain validator address
+     */
     function claimAsDelegatorPerValidator(
         address validator
     ) external nonReentrant {
@@ -597,6 +602,8 @@ contract CRATStakeManager is
         if (reward > 0) _safeTransferETH(sender, reward);
     }
 
+    /** @notice restake rewards as validator
+     */
     function restakeAsValidator() external nonReentrant {
         address sender = _msgSender();
         require(isValidator(sender), "CRATStakeManager: not validator");
@@ -605,6 +612,9 @@ contract CRATStakeManager is
         _depositAsValidator(sender, reward, 0); // not set zero commission, but keeps previous value
     }
 
+    /** @notice restake rewards as delegator (earned for certain validators deposit)
+     * @param validator certain validator address
+     */
     function restakeAsDelegator(address validator) external nonReentrant {
         address sender = _msgSender();
         require(
@@ -628,7 +638,8 @@ contract CRATStakeManager is
         _validatorCallForWithdraw(sender);
     }
 
-    /// @notice sign up to a stop list as delegator (will be able to withdraw deposit after cooldown)
+    /// @notice sign up to a stop list as delegator (will be able to withdraw deposit after cooldown) for certain validator
+    /// @param validator address
     function delegatorCallForWithdraw(address validator) external nonReentrant {
         address sender = _msgSender();
         require(
@@ -649,7 +660,8 @@ contract CRATStakeManager is
         _withdrawAsValidator(_msgSender());
     }
 
-    /// @notice withdraw deposit as delegator (after cooldown)
+    /// @notice withdraw deposit as delegator (after cooldown) for certain validator
+    /// @notice validator address
     function withdrawAsDelegator(address validator) external nonReentrant {
         _withdrawAsDelegator(_msgSender(), validator);
     }
@@ -733,7 +745,8 @@ contract CRATStakeManager is
         emit ValidatorRevived(sender);
     }
 
-    /// @notice exit the stop list as delegator (increase your deposit, if necessary)
+    /// @notice exit the stop list as delegator (increase your deposit, if necessary) for certain validator
+    /// @param validator address
     function reviveAsDelegator(
         address validator
     ) external payable nonReentrant {
@@ -971,8 +984,9 @@ contract CRATStakeManager is
         variableReward += _validatorInfo[validator].variableReward.totalClaimed;
     }
 
-    /** view-method to exactly calculate total distributed rewards for current delegator
+    /** view-method to exactly calculate total distributed rewards for current delegator and current validator
      * @param delegator address
+     * @param validator address
      * @return fixedReward total distributed
      * @return variableReward total distributed
      */
