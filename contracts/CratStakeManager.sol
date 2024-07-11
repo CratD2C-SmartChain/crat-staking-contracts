@@ -68,12 +68,17 @@ contract CRATStakeManager is
     }
 
     struct DelegatorInfo {
-        address validator;
+        EnumerableSet.AddressSet validators;
+        mapping(address => DelegatorPerValidatorInfo) delegatorPerValidator;
+    }
+
+    struct DelegatorPerValidatorInfo {
         uint256 amount;
-        uint256 lastClaim;
+        uint256 storedValidatorAcc;
         uint256 calledForWithdraw;
+        uint256 lastClaim;
         FixedReward fixedReward;
-        DelegatorsVariableReward variableReward;
+        VariableReward variableReward;
     }
 
     struct FixedReward {
@@ -81,11 +86,6 @@ contract CRATStakeManager is
         uint256 lastUpdate;
         uint256 fixedReward;
         uint256 totalClaimed;
-    }
-
-    struct DelegatorsVariableReward {
-        uint256 storedAcc;
-        VariableReward variableReward;
     }
 
     struct VariableReward {
@@ -188,10 +188,7 @@ contract CRATStakeManager is
     function setValidatorsLimit(
         uint256 value
     ) external onlyRole(DEFAULT_ADMIN_ROLE) {
-        require(
-            value >= _validators.length(),
-            "CRATStakeManager: wrong limit"
-        );
+        require(value >= _validators.length(), "CRATStakeManager: wrong limit");
         settings.validatorsLimit = value;
     }
 
@@ -305,10 +302,7 @@ contract CRATStakeManager is
     function withdrawExcessFixedReward(
         uint256 amount
     ) external onlyRole(DEFAULT_ADMIN_ROLE) nonReentrant {
-        require(
-            forFixedReward >= amount,
-            "CRATStakeManager: not enough coins"
-        );
+        require(forFixedReward >= amount, "CRATStakeManager: not enough coins");
         forFixedReward -= amount;
         _safeTransferETH(_msgSender(), amount);
     }
@@ -365,10 +359,7 @@ contract CRATStakeManager is
 
         totalReward = totalDelegatorsReward + totalValidatorsReward;
 
-        require(
-            msg.value >= totalReward,
-            "CRATStakeManager: not enough coins"
-        );
+        require(msg.value >= totalReward, "CRATStakeManager: not enough coins");
 
         _totalValidatorsRewards.variableReward += totalValidatorsReward;
         _totalDelegatorsRewards.variableReward += totalDelegatorsReward;
@@ -461,19 +452,30 @@ contract CRATStakeManager is
                 }
 
                 for (uint256 j; j < delegators.length; j++) {
-                    _updateDelegatorReward(delegators[j]);
-                    _delegatorInfo[delegators[j]].amount -=
-                        (_delegatorInfo[delegators[j]].amount *
-                            delegatorsPerc) /
+                    _updateDelegatorRewardPerValidator(
+                        delegators[j],
+                        validators[i]
+                    );
+                    _delegatorInfo[delegators[j]]
+                        .delegatorPerValidator[validators[i]]
+                        .amount -=
+                        (_delegatorInfo[delegators[j]]
+                            .delegatorPerValidator[validators[i]]
+                            .amount * delegatorsPerc) /
                         PRECISION;
 
                     if (
-                        _delegatorInfo[delegators[j]].amount <
+                        _delegatorInfo[delegators[j]]
+                            .delegatorPerValidator[validators[i]]
+                            .amount <
                         settings.delegatorsSettings.minimumThreshold &&
-                        _delegatorInfo[delegators[j]].calledForWithdraw == 0 &&
+                        _delegatorInfo[delegators[j]]
+                            .delegatorPerValidator[validators[i]]
+                            .calledForWithdraw ==
+                        0 &&
                         stopDelegators
                     ) {
-                        _delegatorCallForWithdraw(delegators[j]);
+                        _delegatorCallForWithdraw(delegators[j], validators[i]);
                     }
                 }
 
@@ -567,7 +569,8 @@ contract CRATStakeManager is
         require(!isValidator(sender), "CRATStakeManager: delegators only");
         require(
             amount > 0 &&
-                _delegatorInfo[sender].amount + amount >=
+                _delegatorInfo[sender].delegatorPerValidator[validator].amount +
+                    amount >=
                 settings.delegatorsSettings.minimumThreshold,
             "CRATStakeManager: wrong input amount"
         );
@@ -575,35 +578,42 @@ contract CRATStakeManager is
         _depositAsDelegator(sender, amount, validator);
     }
 
-    /// @notice claim rewards earned
-    function claim() external nonReentrant {
+    function claimAsValidator() external nonReentrant {
         address sender = _msgSender();
-        bool _isValidator = isValidator(sender);
-        require(
-            _isValidator || isDelegator(sender),
-            "CRATStakeManager: not registered"
-        );
-        uint256 reward;
-        if (_isValidator) reward = _claimAsValidator(sender);
-        else reward = _claimAsDelegator(sender);
+        require(isValidator(sender), "CRATStakeManager: not validator");
+        uint256 reward = _claimAsValidator(sender);
         if (reward > 0) _safeTransferETH(sender, reward);
     }
 
-    /// @notice restake rewards earned (claim + deposit)
-    function restake() external nonReentrant {
+    function claimAsDelegatorPerValidator(
+        address validator
+    ) external nonReentrant {
         address sender = _msgSender();
-        bool _isValidator = isValidator(sender);
         require(
-            _isValidator || isDelegator(sender),
-            "CRATStakeManager: not registered"
+            _delegatorInfo[sender].validators.contains(validator),
+            "CRATStakeManager: wrong validator"
         );
-        uint256 reward;
-        if (_isValidator) reward = _claimAsValidator(sender);
-        else reward = _claimAsDelegator(sender);
+        uint256 reward = _claimAsDelegatorPerValidator(sender, validator);
+        if (reward > 0) _safeTransferETH(sender, reward);
+    }
+
+    function restakeAsValidator() external nonReentrant {
+        address sender = _msgSender();
+        require(isValidator(sender), "CRATStakeManager: not validator");
+        uint256 reward = _claimAsValidator(sender);
         require(reward > 0, "CRATStakeManager: nothing to restake");
-        if (_isValidator)
-            _depositAsValidator(sender, reward, 0); // not set zero commission, but keeps previous value
-        else _depositAsDelegator(sender, reward, address(0)); // not set zero validator address, but keeps previous value
+        _depositAsValidator(sender, reward, 0); // not set zero commission, but keeps previous value
+    }
+
+    function restakeAsDelegator(address validator) external nonReentrant {
+        address sender = _msgSender();
+        require(
+            _delegatorInfo[sender].validators.contains(validator),
+            "CRATStakeManager: wrong validator"
+        );
+        uint256 reward = _claimAsDelegatorPerValidator(sender, validator);
+        require(reward > 0, "CRATStakeManager: nothing to restake");
+        _depositAsDelegator(sender, reward, validator);
     }
 
     /// @notice sign up to a stop list as validator (will be able to withdraw deposit after cooldown)
@@ -619,15 +629,19 @@ contract CRATStakeManager is
     }
 
     /// @notice sign up to a stop list as delegator (will be able to withdraw deposit after cooldown)
-    function delegatorCallForWithdraw() external nonReentrant {
+    function delegatorCallForWithdraw(address validator) external nonReentrant {
         address sender = _msgSender();
         require(
             isDelegator(sender) &&
-                _delegatorInfo[sender].calledForWithdraw == 0,
+                _delegatorInfo[sender].validators.contains(validator) &&
+                _delegatorInfo[sender]
+                    .delegatorPerValidator[validator]
+                    .calledForWithdraw ==
+                0,
             "CRATStakeManager: not active delegator"
         );
 
-        _delegatorCallForWithdraw(sender);
+        _delegatorCallForWithdraw(sender, validator);
     }
 
     /// @notice withdraw deposit as validator (after cooldown; removes all its delegators automatically)
@@ -636,8 +650,8 @@ contract CRATStakeManager is
     }
 
     /// @notice withdraw deposit as delegator (after cooldown)
-    function withdrawAsDelegator() external nonReentrant {
-        _withdrawAsDelegator(_msgSender());
+    function withdrawAsDelegator(address validator) external nonReentrant {
+        _withdrawAsDelegator(_msgSender(), validator);
     }
 
     /// @notice withdraw deposit for current validator (after cooldown; removes all its delegators automatically)
@@ -646,8 +660,11 @@ contract CRATStakeManager is
     }
 
     /// @notice withdraw deposit for current delegator (after cooldown)
-    function withdrawForDelegator(address delegator) external nonReentrant {
-        _withdrawAsDelegator(delegator);
+    function withdrawForDelegator(
+        address delegator,
+        address validator
+    ) external nonReentrant {
+        _withdrawAsDelegator(delegator, validator);
     }
 
     /// @notice exit the stop list as validator (increase your deposit, if necessary)
@@ -684,15 +701,25 @@ contract CRATStakeManager is
             .values();
         uint256 totalMigratedAmount;
         for (uint256 i; i < delegators.length; i++) {
-            _updateDelegatorReward(delegators[i]);
-            if (_delegatorInfo[delegators[i]].calledForWithdraw == 0) {
-                _delegatorInfo[delegators[i]].fixedReward.lastUpdate = block
-                    .timestamp;
-                totalMigratedAmount += _delegatorInfo[delegators[i]].amount;
+            _updateDelegatorRewardPerValidator(delegators[i], sender);
+            if (
+                _delegatorInfo[delegators[i]]
+                    .delegatorPerValidator[sender]
+                    .calledForWithdraw == 0
+            ) {
+                _delegatorInfo[delegators[i]]
+                    .delegatorPerValidator[sender]
+                    .fixedReward
+                    .lastUpdate = block.timestamp;
+                totalMigratedAmount += _delegatorInfo[delegators[i]]
+                    .delegatorPerValidator[sender]
+                    .amount;
             } else {
                 _delegatorInfo[delegators[i]]
+                    .delegatorPerValidator[sender]
                     .fixedReward
                     .lastUpdate = _delegatorInfo[delegators[i]]
+                    .delegatorPerValidator[sender]
                     .calledForWithdraw;
             }
         }
@@ -707,31 +734,32 @@ contract CRATStakeManager is
     }
 
     /// @notice exit the stop list as delegator (increase your deposit, if necessary)
-    function reviveAsDelegator() external payable nonReentrant {
+    function reviveAsDelegator(
+        address validator
+    ) external payable nonReentrant {
         address sender = _msgSender();
+        DelegatorPerValidatorInfo storage info = _delegatorInfo[sender]
+            .delegatorPerValidator[validator];
+
         require(
             isDelegator(sender) &&
-                _delegatorInfo[sender].amount + msg.value >=
+                info.amount + msg.value >=
                 settings.delegatorsSettings.minimumThreshold &&
-                _delegatorInfo[sender].calledForWithdraw > 0 &&
-                _validatorInfo[_delegatorInfo[sender].validator]
-                    .calledForWithdraw ==
-                0,
+                info.calledForWithdraw > 0 &&
+                _validatorInfo[validator].calledForWithdraw == 0,
             "CRATStakeManager: can not revive"
         );
 
-        stoppedDelegatorsPool -= _delegatorInfo[sender].amount;
-        _validatorInfo[_delegatorInfo[sender].validator]
-            .stoppedDelegatedAmount -= _delegatorInfo[sender].amount;
-        _delegatorInfo[sender].amount += msg.value;
-        _validatorInfo[_delegatorInfo[sender].validator]
-            .delegatedAmount += _delegatorInfo[sender].amount;
-        totalDelegatorsPool += _delegatorInfo[sender].amount;
-        _delegatorInfo[sender].fixedReward.lastUpdate = block.timestamp;
-        _delegatorInfo[sender].fixedReward.apr = settings
-            .delegatorsSettings
-            .apr;
-        delete _delegatorInfo[sender].calledForWithdraw;
+        stoppedDelegatorsPool -= info.amount;
+        _validatorInfo[validator].stoppedDelegatedAmount -= _delegatorInfo[
+            sender
+        ].delegatorPerValidator[validator].amount;
+        info.amount += msg.value;
+        _validatorInfo[validator].delegatedAmount += info.amount;
+        totalDelegatorsPool += info.amount;
+        info.fixedReward.lastUpdate = block.timestamp;
+        info.fixedReward.apr = settings.delegatorsSettings.apr;
+        delete info.calledForWithdraw;
 
         emit DelegatorRevived(sender);
     }
@@ -748,7 +776,7 @@ contract CRATStakeManager is
     ) public view returns (uint256 fixedReward, uint256 variableReward) {
         fixedReward =
             _validatorInfo[validator].fixedReward.fixedReward +
-            ((_rightBoarder(validator, true) -
+            ((_rightBoarderV(validator) -
                 _validatorInfo[validator].fixedReward.lastUpdate) *
                 _validatorInfo[validator].amount *
                 _validatorInfo[validator].fixedReward.apr) /
@@ -758,31 +786,20 @@ contract CRATStakeManager is
             .variableReward;
     }
 
-    /** @notice view-method to get delegators's earned amounts
+    /** @notice view-method to get delegators's earned amounts per validator
      * @param delegator address
+     * @param validator address
      * @return fixedReward amount (apr)
      * @return variableReward amount (from distributed to validator)
      */
-    function delegatorEarned(
-        address delegator
+    function delegatorEarnedPerValidator(
+        address delegator,
+        address validator
     ) public view returns (uint256 fixedReward, uint256 variableReward) {
-        fixedReward =
-            _delegatorInfo[delegator].fixedReward.fixedReward +
-            (_delegatorInfo[delegator].amount *
-                (_rightBoarder(delegator, false) -
-                    _delegatorInfo[delegator].fixedReward.lastUpdate) *
-                _delegatorInfo[delegator].fixedReward.apr) /
-            (YEAR_DURATION * PRECISION);
-        variableReward =
-            _delegatorInfo[delegator]
-                .variableReward
-                .variableReward
-                .variableReward +
-            ((_validatorInfo[_delegatorInfo[delegator].validator]
-                .delegatorsAcc -
-                _delegatorInfo[delegator].variableReward.storedAcc) *
-                _delegatorInfo[delegator].amount) /
-            _ACCURACY;
+        (fixedReward, variableReward) = _delegatorEarnedPerValidator(
+            delegator,
+            validator
+        );
     }
 
     /** @notice view-method to get account status
@@ -799,7 +816,7 @@ contract CRATStakeManager is
      * @return true - if the account is a delegator (even if stop-listed), else - false
      */
     function isDelegator(address account) public view returns (bool) {
-        return _delegatorInfo[account].validator != address(0) ? true : false;
+        return _delegatorInfo[account].validators.length() > 0 ? true : false;
     }
 
     /** @notice view-method to get the list of all active validators and their deposited/voted amounts
@@ -891,18 +908,28 @@ contract CRATStakeManager is
 
     /** view-method to get delegator info
      * @param delegator address
-     * @return :
-     * validator address
-     * deposited amount
-     * previous claim timestamp
-     * timestamp of #callForWithdrawAsDelegator transaction (0 - if validator is active)
-     * struct with [apr - APR percent, lastUpdate - timestamp of last reward calculation, fixedReward - already calculated fixed reward] fields
-     * struct with [storedAcc - last updated variable reward accumulator, variableReward - already calculated variable reward]
+     * @return validatorsArr the list of validators
+     * @return delegatorPerValidatorArr the list of info for all validators
      */
     function getDelegatorInfo(
         address delegator
-    ) external view returns (DelegatorInfo memory) {
-        return _delegatorInfo[delegator];
+    )
+        external
+        view
+        returns (
+            address[] memory validatorsArr,
+            DelegatorPerValidatorInfo[] memory delegatorPerValidatorArr
+        )
+    {
+        validatorsArr = _delegatorInfo[delegator].validators.values();
+        uint256 len = validatorsArr.length;
+
+        delegatorPerValidatorArr = new DelegatorPerValidatorInfo[](len);
+
+        for (uint256 i; i < len; i++) {
+            delegatorPerValidatorArr[i] = _delegatorInfo[delegator]
+                .delegatorPerValidator[validatorsArr[i]];
+        }
     }
 
     /** view-method to approximately calculate total distributed rewards for validators
@@ -949,18 +976,48 @@ contract CRATStakeManager is
      * @return fixedReward total distributed
      * @return variableReward total distributed
      */
-    function totalDelegatorReward(
-        address delegator
+    function totalDelegatorRewardPerValidator(
+        address delegator,
+        address validator
     ) external view returns (uint256 fixedReward, uint256 variableReward) {
-        (fixedReward, variableReward) = delegatorEarned(delegator);
-        fixedReward += _delegatorInfo[delegator].fixedReward.totalClaimed;
+        (fixedReward, variableReward) = _delegatorEarnedPerValidator(
+            delegator,
+            validator
+        );
+        fixedReward += _delegatorInfo[delegator]
+            .delegatorPerValidator[validator]
+            .fixedReward
+            .totalClaimed;
         variableReward += _delegatorInfo[delegator]
-            .variableReward
+            .delegatorPerValidator[validator]
             .variableReward
             .totalClaimed;
     }
 
     // internal methods
+
+    function _delegatorEarnedPerValidator(
+        address delegator,
+        address validator
+    ) internal view returns (uint256 fixedReward, uint256 variableReward) {
+        DelegatorPerValidatorInfo memory info = _delegatorInfo[delegator]
+            .delegatorPerValidator[validator];
+
+        fixedReward = info.fixedReward.fixedReward;
+        variableReward = info.variableReward.variableReward;
+        if (info.amount > 0) {
+            fixedReward +=
+                (info.amount *
+                    (_rightBoarderDPV(delegator, validator) -
+                        info.fixedReward.lastUpdate) *
+                    info.fixedReward.apr) /
+                (YEAR_DURATION * PRECISION);
+            variableReward +=
+                ((_validatorInfo[validator].delegatorsAcc -
+                    info.storedValidatorAcc) * info.amount) /
+                _ACCURACY;
+        }
+    }
 
     function _updateValidatorReward(address validator) internal {
         _updateFixedValidatorsReward();
@@ -969,36 +1026,32 @@ contract CRATStakeManager is
         (_validatorInfo[validator].fixedReward.fixedReward, ) = validatorEarned(
             validator
         );
-        _validatorInfo[validator].fixedReward.lastUpdate = _rightBoarder(
-            validator,
-            true
+        _validatorInfo[validator].fixedReward.lastUpdate = _rightBoarderV(
+            validator
         );
         _validatorInfo[validator].fixedReward.apr = settings
             .validatorsSettings
             .apr; // change each _update call (to keep it actual)
     }
 
-    function _updateDelegatorReward(address delegator) internal {
+    function _updateDelegatorRewardPerValidator(
+        address delegator,
+        address validator
+    ) internal {
         _updateFixedDelegatorsReward();
+
+        DelegatorPerValidatorInfo storage info = _delegatorInfo[delegator]
+            .delegatorPerValidator[validator];
 
         // store fixed & variable rewards
         (
-            _delegatorInfo[delegator].fixedReward.fixedReward,
-            _delegatorInfo[delegator]
-                .variableReward
-                .variableReward
-                .variableReward
-        ) = delegatorEarned(delegator);
-        _delegatorInfo[delegator].fixedReward.lastUpdate = _rightBoarder(
-            delegator,
-            false
-        );
-        _delegatorInfo[delegator].fixedReward.apr = settings
-            .delegatorsSettings
-            .apr; // change each _update call (to keep it actual)
-        _delegatorInfo[delegator].variableReward.storedAcc = _validatorInfo[
-            _delegatorInfo[delegator].validator
-        ].delegatorsAcc;
+            info.fixedReward.fixedReward,
+            info.variableReward.variableReward
+        ) = _delegatorEarnedPerValidator(delegator, validator);
+
+        info.fixedReward.lastUpdate = _rightBoarderDPV(delegator, validator);
+        info.fixedReward.apr = settings.delegatorsSettings.apr; // change each _update call (to keep it actual)
+        info.storedValidatorAcc = _validatorInfo[validator].delegatorsAcc;
     }
 
     function _depositAsValidator(
@@ -1040,27 +1093,31 @@ contract CRATStakeManager is
         address validator
     ) internal {
         require(
-            _delegatorInfo[delegator].calledForWithdraw == 0,
+            _delegatorInfo[delegator]
+                .delegatorPerValidator[validator]
+                .calledForWithdraw == 0,
             "CRATStakeManager: in stop list"
         );
-
-        if (!isDelegator(delegator)) {
-            _delegatorInfo[delegator].validator = validator;
-            _delegatorInfo[delegator].lastClaim = block.timestamp; // to keep unboarding period
-            _validatorInfo[validator].delegators.add(delegator);
-        } else {
-            validator = _delegatorInfo[delegator].validator;
-        }
 
         require(
             _validators.contains(validator),
             "CRATStakeManager: wrong validator"
-        ); // necessary to choose only active validator (even if validator choosen before)
+        ); // necessary to choose only active validator
+
+        if (!_delegatorInfo[delegator].validators.contains(validator)) {
+            _delegatorInfo[delegator].validators.add(validator);
+            _validatorInfo[validator].delegators.add(delegator);
+            _delegatorInfo[delegator]
+                .delegatorPerValidator[validator]
+                .lastClaim = block.timestamp; // to keep unboarding period
+        }
 
         // update delegator rewards before amount will be changed
-        _updateDelegatorReward(delegator);
+        _updateDelegatorRewardPerValidator(delegator, validator);
 
-        _delegatorInfo[delegator].amount += amount;
+        _delegatorInfo[delegator]
+            .delegatorPerValidator[validator]
+            .amount += amount;
         _validatorInfo[validator].delegatedAmount += amount;
         totalDelegatorsPool += amount;
 
@@ -1102,12 +1159,16 @@ contract CRATStakeManager is
         emit ValidatorClaimed(validator, toClaim);
     }
 
-    function _claimAsDelegator(
-        address delegator
+    function _claimAsDelegatorPerValidator(
+        address delegator,
+        address validator
     ) internal returns (uint256 toClaim) {
-        _updateDelegatorReward(delegator);
+        _updateDelegatorRewardPerValidator(delegator, validator);
 
-        toClaim = _delegatorInfo[delegator].fixedReward.fixedReward;
+        DelegatorPerValidatorInfo storage info = _delegatorInfo[delegator]
+            .delegatorPerValidator[validator];
+
+        toClaim = info.fixedReward.fixedReward;
 
         require(
             forFixedReward >= toClaim,
@@ -1115,32 +1176,19 @@ contract CRATStakeManager is
         );
 
         forFixedReward -= toClaim;
-        _delegatorInfo[delegator].fixedReward.totalClaimed += toClaim;
-        toClaim += _delegatorInfo[delegator]
-            .variableReward
-            .variableReward
-            .variableReward;
-        _delegatorInfo[delegator]
-            .variableReward
-            .variableReward
-            .totalClaimed += _delegatorInfo[delegator]
-            .variableReward
-            .variableReward
-            .variableReward;
+        info.fixedReward.totalClaimed += toClaim;
+        toClaim += info.variableReward.variableReward;
+        info.variableReward.totalClaimed += info.variableReward.variableReward;
 
         if (toClaim > 0) {
             require(
-                _delegatorInfo[delegator].lastClaim +
-                    settings.delegatorsSettings.claimCooldown <=
+                info.lastClaim + settings.delegatorsSettings.claimCooldown <=
                     block.timestamp,
                 "CRATStakeManager: claim cooldown"
             );
-            _delegatorInfo[delegator].lastClaim = block.timestamp;
-            delete _delegatorInfo[delegator].fixedReward.fixedReward;
-            delete _delegatorInfo[delegator]
-                .variableReward
-                .variableReward
-                .variableReward;
+            info.lastClaim = block.timestamp;
+            delete info.fixedReward.fixedReward;
+            delete info.variableReward.variableReward;
         }
 
         emit DelegatorClaimed(delegator, toClaim);
@@ -1165,20 +1213,29 @@ contract CRATStakeManager is
         emit ValidatorCalledForWithdraw(sender);
     }
 
-    function _delegatorCallForWithdraw(address sender) internal {
-        _updateDelegatorReward(sender);
+    function _delegatorCallForWithdraw(
+        address sender,
+        address validator
+    ) internal {
+        _updateDelegatorRewardPerValidator(sender, validator);
 
-        _delegatorInfo[sender].calledForWithdraw = block.timestamp;
+        _delegatorInfo[sender]
+            .delegatorPerValidator[validator]
+            .calledForWithdraw = block.timestamp;
 
-        address validator = _delegatorInfo[sender].validator;
         if (_validatorInfo[validator].calledForWithdraw == 0) {
-            totalDelegatorsPool -= _delegatorInfo[sender].amount;
-            stoppedDelegatorsPool += _delegatorInfo[sender].amount;
+            totalDelegatorsPool -= _delegatorInfo[sender]
+                .delegatorPerValidator[validator]
+                .amount;
+            stoppedDelegatorsPool += _delegatorInfo[sender]
+                .delegatorPerValidator[validator]
+                .amount;
             _validatorInfo[validator].delegatedAmount -= _delegatorInfo[sender]
+                .delegatorPerValidator[validator]
                 .amount;
             _validatorInfo[validator].stoppedDelegatedAmount += _delegatorInfo[
                 sender
-            ].amount;
+            ].delegatorPerValidator[validator].amount;
         }
 
         emit DelegatorCalledForWithdraw(sender);
@@ -1199,9 +1256,14 @@ contract CRATStakeManager is
             .values();
         uint256 amount;
         for (uint256 i; i < delegators.length; i++) {
-            amount = _claimAsDelegator(delegators[i]);
-            amount += _delegatorInfo[delegators[i]].amount;
-            delete _delegatorInfo[delegators[i]];
+            amount = _claimAsDelegatorPerValidator(delegators[i], validator);
+            amount += _delegatorInfo[delegators[i]]
+                .delegatorPerValidator[validator]
+                .amount;
+            _delegatorInfo[delegators[i]].validators.remove(validator);
+            delete _delegatorInfo[delegators[i]].delegatorPerValidator[
+                validator
+            ];
             _safeTransferETH(delegators[i], amount);
 
             emit DelegatorWithdrawed(delegators[i]);
@@ -1220,28 +1282,34 @@ contract CRATStakeManager is
         emit ValidatorWithdrawed(validator);
     }
 
-    function _withdrawAsDelegator(address delegator) internal {
+    function _withdrawAsDelegator(
+        address delegator,
+        address validator
+    ) internal {
         uint256 calledForWithdraw;
         if (
-            _delegatorInfo[delegator].calledForWithdraw > 0 &&
-            _validatorInfo[_delegatorInfo[delegator].validator]
+            _delegatorInfo[delegator]
+                .delegatorPerValidator[validator]
                 .calledForWithdraw >
-            0
+            0 &&
+            _validatorInfo[validator].calledForWithdraw > 0
         ) {
             calledForWithdraw = Math.min(
-                _delegatorInfo[delegator].calledForWithdraw,
-                _validatorInfo[_delegatorInfo[delegator].validator]
-                    .calledForWithdraw
+                _delegatorInfo[delegator]
+                    .delegatorPerValidator[validator]
+                    .calledForWithdraw,
+                _validatorInfo[validator].calledForWithdraw
             );
-        } else if (_delegatorInfo[delegator].calledForWithdraw > 0) {
-            calledForWithdraw = _delegatorInfo[delegator].calledForWithdraw;
         } else if (
-            _validatorInfo[_delegatorInfo[delegator].validator]
+            _delegatorInfo[delegator]
+                .delegatorPerValidator[validator]
                 .calledForWithdraw > 0
         ) {
-            calledForWithdraw = _validatorInfo[
-                _delegatorInfo[delegator].validator
-            ].calledForWithdraw;
+            calledForWithdraw = _delegatorInfo[delegator]
+                .delegatorPerValidator[validator]
+                .calledForWithdraw;
+        } else if (_validatorInfo[validator].calledForWithdraw > 0) {
+            calledForWithdraw = _validatorInfo[validator].calledForWithdraw;
         } else revert("CRATStakeManager: no call for withdraw");
 
         require(
@@ -1250,17 +1318,21 @@ contract CRATStakeManager is
             "CRATStakeManager: withdraw cooldown"
         );
 
-        uint256 amount = _claimAsDelegator(delegator);
-        amount += _delegatorInfo[delegator].amount;
+        uint256 amount = _claimAsDelegatorPerValidator(delegator, validator);
+        amount += _delegatorInfo[delegator]
+            .delegatorPerValidator[validator]
+            .amount;
 
-        stoppedDelegatorsPool -= _delegatorInfo[delegator].amount;
-        _validatorInfo[_delegatorInfo[delegator].validator]
-            .stoppedDelegatedAmount -= _delegatorInfo[delegator].amount;
-        _validatorInfo[_delegatorInfo[delegator].validator].delegators.remove(
+        stoppedDelegatorsPool -= _delegatorInfo[delegator]
+            .delegatorPerValidator[validator]
+            .amount;
+        _validatorInfo[validator].stoppedDelegatedAmount -= _delegatorInfo[
             delegator
-        );
+        ].delegatorPerValidator[validator].amount;
+        _validatorInfo[validator].delegators.remove(delegator);
+        _delegatorInfo[delegator].validators.remove(validator);
 
-        delete _delegatorInfo[delegator];
+        delete _delegatorInfo[delegator].delegatorPerValidator[validator];
         _safeTransferETH(delegator, amount);
 
         emit DelegatorWithdrawed(delegator);
@@ -1271,6 +1343,7 @@ contract CRATStakeManager is
             _totalValidatorsRewards.fixedReward = _fixedValidatorsReward();
             _totalValidatorsRewards.fixedLastUpdate = block.timestamp;
         }
+        _updateFixedDelegatorsReward();
     }
 
     function _updateFixedDelegatorsReward() internal {
@@ -1287,32 +1360,30 @@ contract CRATStakeManager is
 
     // internal view methods
 
-    function _rightBoarder(
-        address account,
-        bool isValidator_
+    function _rightBoarderV(address account) internal view returns (uint256) {
+        return
+            _validatorInfo[account].calledForWithdraw > 0
+                ? _validatorInfo[account].calledForWithdraw
+                : block.timestamp;
+    }
+
+    function _rightBoarderDPV(
+        address delegator,
+        address validator
     ) internal view returns (uint256) {
-        if (isValidator_)
-            return
-                _validatorInfo[account].calledForWithdraw > 0
-                    ? _validatorInfo[account].calledForWithdraw
-                    : block.timestamp;
-        else {
-            address validator = _delegatorInfo[account].validator;
-            if (
-                _validatorInfo[validator].calledForWithdraw > 0 &&
-                _delegatorInfo[account].calledForWithdraw > 0
-            ) {
-                return
-                    Math.min(
-                        _validatorInfo[validator].calledForWithdraw,
-                        _delegatorInfo[account].calledForWithdraw
-                    );
-            } else if (_validatorInfo[validator].calledForWithdraw > 0)
-                return _validatorInfo[validator].calledForWithdraw;
-            else if (_delegatorInfo[account].calledForWithdraw > 0)
-                return _delegatorInfo[account].calledForWithdraw;
-            else return block.timestamp;
-        }
+        DelegatorPerValidatorInfo memory info = _delegatorInfo[delegator]
+            .delegatorPerValidator[validator];
+
+        uint256 validatorsCallForWithdraw = _validatorInfo[validator]
+            .calledForWithdraw;
+
+        if (info.calledForWithdraw > 0 && validatorsCallForWithdraw > 0) {
+            return Math.min(info.calledForWithdraw, validatorsCallForWithdraw);
+        } else if (validatorsCallForWithdraw > 0) {
+            return validatorsCallForWithdraw;
+        } else if (info.calledForWithdraw > 0) {
+            return info.calledForWithdraw;
+        } else return block.timestamp;
     }
 
     function _fixedValidatorsReward() internal view returns (uint256) {

@@ -98,12 +98,12 @@ describe("CRATStakeManager", function () {
 
             assert.equal(await stakeManager.totalValidatorsPool(), ethers.parseEther('100'));
 
-            await expect(stakeManager.connect(validator1).claim()).to.be.revertedWith("CRATStakeManager: not enough coins for fixed rewards");
+            await expect(stakeManager.connect(validator1).claimAsValidator()).to.be.revertedWith("CRATStakeManager: not enough coins for fixed rewards");
             await owner.sendTransaction({value:ethers.parseEther('100'), to:stakeManager.target});
-            await expect(stakeManager.connect(validator1).claim()).to.be.revertedWith("CRATStakeManager: claim cooldown");
-            await expect(stakeManager.connect(delegator1).claim()).to.be.revertedWith("CRATStakeManager: not registered");
-            await expect(stakeManager.connect(validator1).restake()).to.be.revertedWith("CRATStakeManager: claim cooldown");
-            await expect(stakeManager.connect(delegator1).restake()).to.be.revertedWith("CRATStakeManager: not registered");
+            await expect(stakeManager.connect(validator1).claimAsValidator()).to.be.revertedWith("CRATStakeManager: claim cooldown");
+            await expect(stakeManager.connect(delegator1).claimAsValidator()).to.be.revertedWith("CRATStakeManager: not validator");
+            await expect(stakeManager.connect(validator1).restakeAsValidator()).to.be.revertedWith("CRATStakeManager: claim cooldown");
+            await expect(stakeManager.connect(delegator1).restakeAsValidator()).to.be.revertedWith("CRATStakeManager: not validator");
 
             // increase validators deposit
             await expect(stakeManager.connect(validator1).depositAsValidator(4, {value: ethers.parseEther('1')})).to.changeEtherBalances([stakeManager, validator1], [ethers.parseEther('1'), -ethers.parseEther('1')]);
@@ -125,21 +125,29 @@ describe("CRATStakeManager", function () {
             assert.equal(validator1Info.delegators.length, 0);
             assert.equal(await stakeManager.totalValidatorsPool(), ethers.parseEther('101'));
 
+            let delegator1Info = await stakeManager.getDelegatorInfo(delegator1);
+            assert.equal(delegator1Info.validatorsArr.length, 0);
+            assert.equal(delegator1Info.delegatorPerValidatorArr.length, 0);
+
             // becomes a delegator
             await expect(stakeManager.connect(delegator1).depositAsDelegator(validator1, {value: ethers.parseEther('10')})).to.changeEtherBalances([stakeManager, delegator1], [ethers.parseEther('10'), -ethers.parseEther('10')]);
             currentTime = await time.latest();
-            let delegator1Info = await stakeManager.getDelegatorInfo(delegator1);
-            assert.equal(delegator1Info.validator, validator1.address);
-            assert.equal(delegator1Info.amount, ethers.parseEther('10'));
-            assert.equal(delegator1Info.lastClaim, currentTime);
-            assert.equal(delegator1Info.calledForWithdraw, 0);
-            assert.equal(delegator1Info.fixedReward.apr, 1300);
-            assert.equal(delegator1Info.fixedReward.lastUpdate, currentTime);
-            assert.equal(delegator1Info.fixedReward.fixedReward, 0);
-            assert.equal(delegator1Info.fixedReward.totalClaimed, 0);
-            assert.equal(delegator1Info.variableReward.storedAcc, 0);
-            assert.equal(delegator1Info.variableReward.variableReward.variableReward, 0);
-            assert.equal(delegator1Info.variableReward.variableReward.totalClaimed, 0);
+            delegator1Info = await stakeManager.getDelegatorInfo(delegator1);
+            assert.equal(delegator1Info.validatorsArr.length, 1);
+            assert.equal(delegator1Info.delegatorPerValidatorArr.length, 1);
+            assert.equal(delegator1Info.validatorsArr[0], validator1.address);
+
+            assert.equal(delegator1Info.delegatorPerValidatorArr[0].amount, ethers.parseEther('10'));
+            assert.equal(delegator1Info.delegatorPerValidatorArr[0].lastClaim, currentTime);
+            assert.equal(delegator1Info.delegatorPerValidatorArr[0].calledForWithdraw, 0);
+            assert.equal(delegator1Info.delegatorPerValidatorArr[0].fixedReward.apr, 1300);
+            assert.equal(delegator1Info.delegatorPerValidatorArr[0].fixedReward.lastUpdate, currentTime);
+            assert.equal(delegator1Info.delegatorPerValidatorArr[0].fixedReward.fixedReward, 0);
+            assert.equal(delegator1Info.delegatorPerValidatorArr[0].fixedReward.totalClaimed, 0);
+            assert.equal(delegator1Info.delegatorPerValidatorArr[0].storedValidatorAcc, 0);
+            assert.equal(delegator1Info.delegatorPerValidatorArr[0].variableReward.variableReward, 0);
+            assert.equal(delegator1Info.delegatorPerValidatorArr[0].variableReward.totalClaimed, 0);
+
             assert.equal(await stakeManager.totalDelegatorsPool(), ethers.parseEther('10'));
             validator1Info = await stakeManager.getValidatorInfo(validator1);
             assert.equal(validator1Info.delegatedAmount, ethers.parseEther('10'));
@@ -159,30 +167,32 @@ describe("CRATStakeManager", function () {
             fixedValidatorReward += BigInt(currentTime - currentTime2) * ethers.parseEther('101') * BigInt(15) / BigInt(100) / BigInt(365 * 86400);
 
             // increase delegators deposit (validator change is forbidden)
-            await stakeManager.connect(delegator1).depositAsDelegator(delegator1, {value: ethers.parseEther('1')});
+            await stakeManager.connect(delegator1).depositAsDelegator(validator1, {value: ethers.parseEther('1')});
             currentTime2 = await time.latest();
             delegator1Info = await stakeManager.getDelegatorInfo(delegator1);
-            assert.equal(delegator1Info.validator, validator1.address);
-            assert.equal(delegator1Info.amount, ethers.parseEther('11'));
-            assert.equal(delegator1Info.lastClaim, currentTime);
-            assert.equal(delegator1Info.calledForWithdraw, 0);
-            assert.equal(delegator1Info.fixedReward.apr, 1300);
-            assert.equal(delegator1Info.fixedReward.lastUpdate, currentTime2);
-            assert.equal(delegator1Info.fixedReward.fixedReward, BigInt(currentTime2 - currentTime) * BigInt(13) * ethers.parseEther('10') / BigInt(100) / BigInt(365*86400));
-            assert.equal(delegator1Info.variableReward.storedAcc, 0);
-            assert.equal(delegator1Info.variableReward.variableReward.variableReward, 0);
-            assert.equal(delegator1Info.variableReward.variableReward.totalClaimed, 0);
+            assert.equal(delegator1Info.validatorsArr.length, 1);
+            assert.equal(delegator1Info.delegatorPerValidatorArr.length, 1);
+            assert.equal(delegator1Info.validatorsArr[0], validator1.address);
+            assert.equal(delegator1Info.delegatorPerValidatorArr[0].amount, ethers.parseEther('11'));
+            assert.equal(delegator1Info.delegatorPerValidatorArr[0].lastClaim, currentTime);
+            assert.equal(delegator1Info.delegatorPerValidatorArr[0].calledForWithdraw, 0);
+            assert.equal(delegator1Info.delegatorPerValidatorArr[0].fixedReward.apr, 1300);
+            assert.equal(delegator1Info.delegatorPerValidatorArr[0].fixedReward.lastUpdate, currentTime2);
+            assert.equal(delegator1Info.delegatorPerValidatorArr[0].fixedReward.fixedReward, BigInt(currentTime2 - currentTime) * BigInt(13) * ethers.parseEther('10') / BigInt(100) / BigInt(365*86400));
+            assert.equal(delegator1Info.delegatorPerValidatorArr[0].storedValidatorAcc, 0);
+            assert.equal(delegator1Info.delegatorPerValidatorArr[0].variableReward.variableReward, 0);
+            assert.equal(delegator1Info.delegatorPerValidatorArr[0].variableReward.totalClaimed, 0);
             assert.equal(await stakeManager.totalDelegatorsPool(), ethers.parseEther('11'));
 
             fixedValidatorReward += BigInt(currentTime2 - currentTime) * ethers.parseEther('101') * BigInt(15) / BigInt(100) / BigInt(365 * 86400);
 
             assert.equal((await stakeManager.validatorEarned(validator1))[0], fixedValidatorReward);
             assert.equal((await stakeManager.validatorEarned(validator1))[1], 0);
-            assert.equal((await stakeManager.delegatorEarned(delegator1))[0], delegator1Info.fixedReward.fixedReward);
-            assert.equal((await stakeManager.delegatorEarned(delegator1))[1], 0);
+            assert.equal((await stakeManager.delegatorEarnedPerValidator(delegator1, validator1))[0], delegator1Info.delegatorPerValidatorArr[0].fixedReward.fixedReward);
+            assert.equal((await stakeManager.delegatorEarnedPerValidator(delegator1, validator1))[1], 0);
 
-            await expect(stakeManager.connect(delegator1).claim()).to.be.revertedWith("CRATStakeManager: claim cooldown");
-            await expect(stakeManager.connect(delegator1).restake()).to.be.revertedWith("CRATStakeManager: claim cooldown");
+            await expect(stakeManager.connect(delegator1).claimAsDelegatorPerValidator(validator1)).to.be.revertedWith("CRATStakeManager: claim cooldown");
+            await expect(stakeManager.connect(delegator1).restakeAsDelegator(validator1)).to.be.revertedWith("CRATStakeManager: claim cooldown");
             await expect(stakeManager.connect(delegator1).depositAsValidator(0, {value: ethers.parseEther('100')})).to.be.revertedWith("CRATStakeManager: validators only");
 
             await expect(stakeManager.connect(validator1).withdrawExcessFixedReward(ethers.parseEther('200'))).to.be.revertedWithCustomError(stakeManager, "AccessControlUnauthorizedAccount")
@@ -224,14 +234,14 @@ describe("CRATStakeManager", function () {
             assert.equal(validatorInfo.delegatorsAcc, d1VariableReward * ethers.parseEther('1') / ethers.parseEther('10'));
             v1VariableReward += ethers.parseEther('1') - d1VariableReward;
             assert.equal((await stakeManager.validatorEarned(validator1))[1], v1VariableReward);
-            assert.equal((await stakeManager.delegatorEarned(delegator1))[0], BigInt(await time.latest() - d1Start) * ethers.parseEther('10') * BigInt(13) / BigInt(100*86400*365));
-            assert.equal((await stakeManager.delegatorEarned(delegator1))[1], d1VariableReward);
+            assert.equal((await stakeManager.delegatorEarnedPerValidator(delegator1, validator1))[0], BigInt(await time.latest() - d1Start) * ethers.parseEther('10') * BigInt(13) / BigInt(100*86400*365));
+            assert.equal((await stakeManager.delegatorEarnedPerValidator(delegator1, validator1))[1], d1VariableReward);
 
             // add another delegator
             await stakeManager.connect(delegator2_1).depositAsDelegator(validator1, {value: ethers.parseEther('40')});
             let d2Start = await time.latest();
             let delegatorInfo = await stakeManager.getDelegatorInfo(delegator2_1);
-            assert.equal(delegatorInfo.variableReward.storedAcc, validatorInfo.delegatorsAcc);
+            assert.equal(delegatorInfo.delegatorPerValidatorArr[0].storedValidatorAcc, validatorInfo.delegatorsAcc);
 
             await stakeManager.connect(distributor).distributeRewards([validator1], [ethers.parseEther('1')], {value: ethers.parseEther('1')});
             let fee = ethers.parseEther('1') / BigInt(20);
@@ -240,17 +250,17 @@ describe("CRATStakeManager", function () {
             d1VariableReward += fee / BigInt(5);
             let d2VariableReward = fee * BigInt(4) / BigInt(5);
             assert.equal((await stakeManager.validatorEarned(validator1))[1], v1VariableReward);
-            assert.equal((await stakeManager.delegatorEarned(delegator1))[1], d1VariableReward);
-            assert.equal((await stakeManager.delegatorEarned(delegator2_1))[0], BigInt(await time.latest() - d2Start) * ethers.parseEther('40') * BigInt(13) / BigInt(100*86400*365));
-            assert.equal((await stakeManager.delegatorEarned(delegator2_1))[1], d2VariableReward);
+            assert.equal((await stakeManager.delegatorEarnedPerValidator(delegator1, validator1))[1], d1VariableReward);
+            assert.equal((await stakeManager.delegatorEarnedPerValidator(delegator2_1, validator1))[0], BigInt(await time.latest() - d2Start) * ethers.parseEther('40') * BigInt(13) / BigInt(100*86400*365));
+            assert.equal((await stakeManager.delegatorEarnedPerValidator(delegator2_1, validator1))[1], d2VariableReward);
 
             // validator claim
             await time.increase(time.duration.days(14));
 
-            await expect(stakeManager.connect(validator1).claim()).to.be.revertedWith("CRATStakeManager: not enough coins for fixed rewards");
+            await expect(stakeManager.connect(validator1).claimAsValidator()).to.be.revertedWith("CRATStakeManager: not enough coins for fixed rewards");
             let fixedReward = BigInt(await time.latest() + 2 - v1Start) * ethers.parseEther('100') * BigInt(15) / BigInt(100 * 86400 * 365);
             await distributor.sendTransaction({value: fixedReward, to: stakeManager.target});
-            await expect(stakeManager.connect(validator1).claim()).to.changeEtherBalances([validator1, stakeManager], [v1VariableReward + fixedReward, -(v1VariableReward + fixedReward)]);
+            await expect(stakeManager.connect(validator1).claimAsValidator()).to.changeEtherBalances([validator1, stakeManager], [v1VariableReward + fixedReward, -(v1VariableReward + fixedReward)]);
             v1Start = await time.latest();
             assert.equal((await stakeManager.validatorEarned(validator1))[0], 0);
             assert.equal((await stakeManager.validatorEarned(validator1))[1], 0);
@@ -262,7 +272,7 @@ describe("CRATStakeManager", function () {
             assert.equal(validatorInfo.fixedReward.totalClaimed, fixedReward);
             assert.equal(validatorInfo.lastClaim, v1Start);
             await validator1.sendTransaction({to:stakeManager.target, value: ethers.parseEther('100')});
-            await expect(stakeManager.connect(validator1).claim()).to.be.revertedWith("CRATStakeManager: claim cooldown");
+            await expect(stakeManager.connect(validator1).claimAsValidator()).to.be.revertedWith("CRATStakeManager: claim cooldown");
             await stakeManager.withdrawExcessFixedReward(ethers.parseEther('100'));
 
             let fixedClaimed = validatorInfo.fixedReward.totalClaimed;
@@ -270,10 +280,10 @@ describe("CRATStakeManager", function () {
 
             await time.increase(time.duration.days(14));
             // validator restake
-            await expect(stakeManager.connect(validator1).restake()).to.be.revertedWith("CRATStakeManager: not enough coins for fixed rewards");
+            await expect(stakeManager.connect(validator1).restakeAsValidator()).to.be.revertedWith("CRATStakeManager: not enough coins for fixed rewards");
             fixedReward = BigInt(await time.latest() + 2 - v1Start) * ethers.parseEther('100') * BigInt(15) / BigInt(100 * 86400 * 365);
             await distributor.sendTransaction({value: fixedReward, to: stakeManager.target});
-            await expect(stakeManager.connect(validator1).restake()).to.changeEtherBalances([validator1, stakeManager], [0,0]);
+            await expect(stakeManager.connect(validator1).restakeAsValidator()).to.changeEtherBalances([validator1, stakeManager], [0,0]);
             v1Start = await time.latest();
             validatorInfo = await stakeManager.getValidatorInfo(validator1);
             assert.equal(validatorInfo.amount, ethers.parseEther('100') + fixedReward);
@@ -291,45 +301,45 @@ describe("CRATStakeManager", function () {
             await time.increase(time.duration.days(2));
 
             // delegator claim
-            await expect(stakeManager.connect(delegator1).claim()).to.be.revertedWith("CRATStakeManager: not enough coins for fixed rewards");
+            await expect(stakeManager.connect(delegator1).claimAsDelegatorPerValidator(validator1)).to.be.revertedWith("CRATStakeManager: not enough coins for fixed rewards");
             fixedReward = BigInt(await time.latest() + 2 - d1Start) * ethers.parseEther('10') * BigInt(13) / BigInt(100 * 86400 * 365);
             await distributor.sendTransaction({value: fixedReward, to: stakeManager.target});
-            await expect(stakeManager.connect(delegator1).claim()).to.changeEtherBalances([delegator1, stakeManager], [fixedReward + d1VariableReward, -(fixedReward + d1VariableReward)]);
+            await expect(stakeManager.connect(delegator1).claimAsDelegatorPerValidator(validator1)).to.changeEtherBalances([delegator1, stakeManager], [fixedReward + d1VariableReward, -(fixedReward + d1VariableReward)]);
             d1Start = await time.latest();
             delegatorInfo = await stakeManager.getDelegatorInfo(delegator1);
-            assert.equal(delegatorInfo.amount, ethers.parseEther('10'));
-            assert.equal(delegatorInfo.lastClaim, d1Start);
-            assert.equal(delegatorInfo.fixedReward.lastUpdate, d1Start);
-            assert.equal(delegatorInfo.fixedReward.fixedReward, 0);
-            assert.equal(delegatorInfo.variableReward.variableReward.variableReward, 0);
-            assert.equal(delegatorInfo.variableReward.storedAcc, validatorInfo.delegatorsAcc);
+            assert.equal(delegatorInfo.delegatorPerValidatorArr[0].amount, ethers.parseEther('10'));
+            assert.equal(delegatorInfo.delegatorPerValidatorArr[0].lastClaim, d1Start);
+            assert.equal(delegatorInfo.delegatorPerValidatorArr[0].fixedReward.lastUpdate, d1Start);
+            assert.equal(delegatorInfo.delegatorPerValidatorArr[0].fixedReward.fixedReward, 0);
+            assert.equal(delegatorInfo.delegatorPerValidatorArr[0].variableReward.variableReward, 0);
+            assert.equal(delegatorInfo.delegatorPerValidatorArr[0].storedValidatorAcc, validatorInfo.delegatorsAcc);
             assert.equal(await stakeManager.totalDelegatorsPool(), ethers.parseEther('50'));
-            assert.equal((await stakeManager.delegatorEarned(delegator1))[0], 0);
-            assert.equal((await stakeManager.delegatorEarned(delegator1))[1], 0);
+            assert.equal((await stakeManager.delegatorEarnedPerValidator(delegator1, validator1))[0], 0);
+            assert.equal((await stakeManager.delegatorEarnedPerValidator(delegator1, validator1))[1], 0);
             await validator1.sendTransaction({value: ethers.parseEther('100'), to: stakeManager.target});
-            await expect(stakeManager.connect(delegator1).claim()).to.be.revertedWith("CRATStakeManager: claim cooldown");
-            await expect(stakeManager.connect(delegator1).restake()).to.be.revertedWith("CRATStakeManager: claim cooldown");
+            await expect(stakeManager.connect(delegator1).claimAsDelegatorPerValidator(validator1)).to.be.revertedWith("CRATStakeManager: claim cooldown");
+            await expect(stakeManager.connect(delegator1).restakeAsDelegator(validator1)).to.be.revertedWith("CRATStakeManager: claim cooldown");
             await stakeManager.withdrawExcessFixedReward(ethers.parseEther('100'));
 
             // delegator restake
-            await expect(stakeManager.connect(delegator2_1).restake()).to.be.revertedWith("CRATStakeManager: not enough coins for fixed rewards");
+            await expect(stakeManager.connect(delegator2_1).restakeAsDelegator(validator1)).to.be.revertedWith("CRATStakeManager: not enough coins for fixed rewards");
             fixedReward = BigInt(await time.latest() + 2 - d2Start) * ethers.parseEther('40') * BigInt(13) / BigInt(100 * 86400 * 365);
             await distributor.sendTransaction({value: fixedReward, to: stakeManager.target});
-            await expect(stakeManager.connect(delegator2_1).restake()).to.changeEtherBalances([stakeManager, delegator2_1], [0,0]);
+            await expect(stakeManager.connect(delegator2_1).restakeAsDelegator(validator1)).to.changeEtherBalances([stakeManager, delegator2_1], [0,0]);
             d2Start = await time.latest();
             delegatorInfo = await stakeManager.getDelegatorInfo(delegator2_1);
-            assert.equal(delegatorInfo.amount, ethers.parseEther('40') + fixedReward + d2VariableReward);
-            assert.equal(delegatorInfo.lastClaim, d2Start);
-            assert.equal(delegatorInfo.fixedReward.lastUpdate, d2Start);
-            assert.equal(delegatorInfo.fixedReward.fixedReward, 0);
-            assert.equal(delegatorInfo.variableReward.variableReward.variableReward, 0);
-            assert.equal(delegatorInfo.variableReward.storedAcc, validatorInfo.delegatorsAcc);
+            assert.equal(delegatorInfo.delegatorPerValidatorArr[0].amount, ethers.parseEther('40') + fixedReward + d2VariableReward);
+            assert.equal(delegatorInfo.delegatorPerValidatorArr[0].lastClaim, d2Start);
+            assert.equal(delegatorInfo.delegatorPerValidatorArr[0].fixedReward.lastUpdate, d2Start);
+            assert.equal(delegatorInfo.delegatorPerValidatorArr[0].fixedReward.fixedReward, 0);
+            assert.equal(delegatorInfo.delegatorPerValidatorArr[0].variableReward.variableReward, 0);
+            assert.equal(delegatorInfo.delegatorPerValidatorArr[0].storedValidatorAcc, validatorInfo.delegatorsAcc);
             assert.equal(await stakeManager.totalDelegatorsPool(), ethers.parseEther('50') + fixedReward + d2VariableReward);
-            assert.equal((await stakeManager.delegatorEarned(delegator2_1))[0], 0);
-            assert.equal((await stakeManager.delegatorEarned(delegator2_1))[1], 0);
+            assert.equal((await stakeManager.delegatorEarnedPerValidator(delegator2_1, validator1))[0], 0);
+            assert.equal((await stakeManager.delegatorEarnedPerValidator(delegator2_1, validator1))[1], 0);
             await validator1.sendTransaction({value: ethers.parseEther('100'), to: stakeManager.target});
-            await expect(stakeManager.connect(delegator2_1).claim()).to.be.revertedWith("CRATStakeManager: claim cooldown");
-            await expect(stakeManager.connect(delegator2_1).restake()).to.be.revertedWith("CRATStakeManager: claim cooldown");
+            await expect(stakeManager.connect(delegator2_1).claimAsDelegatorPerValidator(validator1)).to.be.revertedWith("CRATStakeManager: claim cooldown");
+            await expect(stakeManager.connect(delegator2_1).restakeAsDelegator(validator1)).to.be.revertedWith("CRATStakeManager: claim cooldown");
         })
 
         it("Call for withdraw & withdraw cases", async ()=> {
@@ -370,9 +380,9 @@ describe("CRATStakeManager", function () {
             let currentTime = await time.latest();
             let v2Earned = await stakeManager.validatorEarned(validator2);
             let v1Earned = await stakeManager.validatorEarned(validator1);
-            let d21Earned = await stakeManager.delegatorEarned(delegator2_1);
-            let d22Earned = await stakeManager.delegatorEarned(delegator2_2);
-            let d1Earned = await stakeManager.delegatorEarned(delegator1);
+            let d21Earned = await stakeManager.delegatorEarnedPerValidator(delegator2_1, validator2);
+            let d22Earned = await stakeManager.delegatorEarnedPerValidator(delegator2_2, validator2);
+            let d1Earned = await stakeManager.delegatorEarnedPerValidator(delegator1, validator1);
             assert.equal(v2Earned[0], BigInt(currentTime - v2Start) * BigInt(15) * ethers.parseEther('200') / BigInt(86400*365*100));
             assert.equal(v2Earned[1], ethers.parseEther('50') - fee);
             assert.equal(d21Earned[0], BigInt(currentTime - d21Start) * BigInt(13) * ethers.parseEther('10') / BigInt(86400*365*100));
@@ -386,41 +396,40 @@ describe("CRATStakeManager", function () {
 
             // delegator call for withdraw
             await expect(stakeManager.connect(validator1).withdrawAsValidator()).to.be.revertedWith("CRATStakeManager: withdraw cooldown");
-            await expect(stakeManager.connect(delegator1).withdrawAsDelegator()).to.be.revertedWith("CRATStakeManager: no call for withdraw");
-            await expect(stakeManager.connect(validator1).delegatorCallForWithdraw()).to.be.revertedWith("CRATStakeManager: not active delegator");
+            await expect(stakeManager.connect(delegator1).withdrawAsDelegator(validator1)).to.be.revertedWith("CRATStakeManager: no call for withdraw");
+            await expect(stakeManager.connect(validator1).delegatorCallForWithdraw(validator1)).to.be.revertedWith("CRATStakeManager: not active delegator");
             await expect(stakeManager.connect(delegator1).validatorCallForWithdraw()).to.be.revertedWith("CRATStakeManager: not active validator");
 
-            await stakeManager.connect(delegator2_1).delegatorCallForWithdraw();
+            await stakeManager.connect(delegator2_1).delegatorCallForWithdraw(validator2);
             let d21CalledForWithdraw = await time.latest();
             assert.equal(await stakeManager.totalDelegatorsPool(), ethers.parseEther('50'));
             assert.equal(await stakeManager.stoppedDelegatorsPool(), ethers.parseEther('10'));
             let delegatorInfo = await stakeManager.getDelegatorInfo(delegator2_1);
-            assert.equal(delegatorInfo.amount, ethers.parseEther('10'));
-            assert.equal(delegatorInfo.validator, validator2.address);
-            assert.equal(delegatorInfo.lastClaim, d21Start);
-            assert.equal(delegatorInfo.calledForWithdraw, d21CalledForWithdraw);
-            assert.equal(delegatorInfo.fixedReward.lastUpdate, d21CalledForWithdraw);
-            assert.equal(delegatorInfo.fixedReward.fixedReward, BigInt(d21CalledForWithdraw - d21Start) * BigInt(13) * ethers.parseEther('10') / BigInt(86400*100*365));
-            assert.equal(delegatorInfo.variableReward.variableReward.variableReward, fee / BigInt(5));
-            assert.equal(delegatorInfo.variableReward.storedAcc, fee * ethers.parseEther('1') / ethers.parseEther('50'));
+            assert.equal(delegatorInfo.delegatorPerValidatorArr[0].amount, ethers.parseEther('10'));
+            assert.equal(delegatorInfo.delegatorPerValidatorArr[0].lastClaim, d21Start);
+            assert.equal(delegatorInfo.delegatorPerValidatorArr[0].calledForWithdraw, d21CalledForWithdraw);
+            assert.equal(delegatorInfo.delegatorPerValidatorArr[0].fixedReward.lastUpdate, d21CalledForWithdraw);
+            assert.equal(delegatorInfo.delegatorPerValidatorArr[0].fixedReward.fixedReward, BigInt(d21CalledForWithdraw - d21Start) * BigInt(13) * ethers.parseEther('10') / BigInt(86400*100*365));
+            assert.equal(delegatorInfo.delegatorPerValidatorArr[0].variableReward.variableReward, fee / BigInt(5));
+            assert.equal(delegatorInfo.delegatorPerValidatorArr[0].storedValidatorAcc, fee * ethers.parseEther('1') / ethers.parseEther('50'));
             let validatorInfo = await stakeManager.getValidatorInfo(validator2);
             assert.equal(validatorInfo.delegators.length, 2);
             assert.equal(validatorInfo.delegators[0], delegator2_1.address);
             assert.equal(validatorInfo.delegators[1], delegator2_2.address);
             assert.equal(validatorInfo.delegatedAmount, ethers.parseEther('40'));
             assert.equal(validatorInfo.stoppedDelegatedAmount, ethers.parseEther('10'));
-            assert.equal((await stakeManager.delegatorEarned(delegator2_1))[0], BigInt(d21CalledForWithdraw - d21Start) * BigInt(13) * ethers.parseEther('10') / BigInt(86400*365*100));
-            assert.equal((await stakeManager.delegatorEarned(delegator2_1))[1], d21Earned[1]);
-            d21Earned = await stakeManager.delegatorEarned(delegator2_1);
+            assert.equal((await stakeManager.delegatorEarnedPerValidator(delegator2_1, validator2))[0], BigInt(d21CalledForWithdraw - d21Start) * BigInt(13) * ethers.parseEther('10') / BigInt(86400*365*100));
+            assert.equal((await stakeManager.delegatorEarnedPerValidator(delegator2_1, validator2))[1], d21Earned[1]);
+            d21Earned = await stakeManager.delegatorEarnedPerValidator(delegator2_1, validator2);
 
             await time.increase(100);
 
             // check fixed reward stop increase
-            assert.equal((await stakeManager.delegatorEarned(delegator2_1))[0], d21Earned[0]);
-            assert.equal((await stakeManager.delegatorEarned(delegator2_1))[1], d21Earned[1]);
+            assert.equal((await stakeManager.delegatorEarnedPerValidator(delegator2_1, validator2))[0], d21Earned[0]);
+            assert.equal((await stakeManager.delegatorEarnedPerValidator(delegator2_1, validator2))[1], d21Earned[1]);
 
-            await expect(stakeManager.connect(delegator2_1).delegatorCallForWithdraw()).to.be.revertedWith("CRATStakeManager: not active delegator");
-            await expect(stakeManager.connect(delegator2_1).withdrawAsDelegator()).to.be.revertedWith("CRATStakeManager: withdraw cooldown");
+            await expect(stakeManager.connect(delegator2_1).delegatorCallForWithdraw(validator2)).to.be.revertedWith("CRATStakeManager: not active delegator");
+            await expect(stakeManager.connect(delegator2_1).withdrawAsDelegator(validator2)).to.be.revertedWith("CRATStakeManager: withdraw cooldown");
             await expect(stakeManager.connect(delegator2_1).depositAsDelegator(validator2, {value: ethers.parseEther('1')})).to.be.revertedWith("CRATStakeManager: in stop list");
 
             // check still share variable rewards
@@ -429,20 +438,20 @@ describe("CRATStakeManager", function () {
             currentTime = await time.latest();
             assert.equal((await stakeManager.validatorEarned(validator2))[0], BigInt(currentTime - v2Start) * BigInt(15) * ethers.parseEther('200') / BigInt(86400*365*100));
             assert.equal((await stakeManager.validatorEarned(validator2))[1], v2Earned[1] + ethers.parseEther('20') - fee);
-            assert.equal((await stakeManager.delegatorEarned(delegator2_1))[0], d21Earned[0]);
-            assert.equal((await stakeManager.delegatorEarned(delegator2_1))[1], d21Earned[1] + fee / BigInt(5));
-            assert.equal((await stakeManager.delegatorEarned(delegator2_2))[0], BigInt(currentTime - d22Start) * BigInt(13) * ethers.parseEther('40') / BigInt(86400*365*100));
-            assert.equal((await stakeManager.delegatorEarned(delegator2_2))[1], d22Earned[1] + fee * BigInt(4) / BigInt(5));
+            assert.equal((await stakeManager.delegatorEarnedPerValidator(delegator2_1, validator2))[0], d21Earned[0]);
+            assert.equal((await stakeManager.delegatorEarnedPerValidator(delegator2_1, validator2))[1], d21Earned[1] + fee / BigInt(5));
+            assert.equal((await stakeManager.delegatorEarnedPerValidator(delegator2_2, validator2))[0], BigInt(currentTime - d22Start) * BigInt(13) * ethers.parseEther('40') / BigInt(86400*365*100));
+            assert.equal((await stakeManager.delegatorEarnedPerValidator(delegator2_2, validator2))[1], d22Earned[1] + fee * BigInt(4) / BigInt(5));
             assert.equal((await stakeManager.validatorEarned(validator1))[0], BigInt(currentTime - v1Start) * BigInt(15) * ethers.parseEther('100') / BigInt(86400*365*100));
             assert.equal((await stakeManager.validatorEarned(validator1))[1], v1Earned[1] + ethers.parseEther('10'));
-            assert.equal((await stakeManager.delegatorEarned(delegator1))[0], BigInt(currentTime - d1Start) * BigInt(13) * ethers.parseEther('10') / BigInt(86400*365*100));
-            assert.equal((await stakeManager.delegatorEarned(delegator1))[1], 0);
+            assert.equal((await stakeManager.delegatorEarnedPerValidator(delegator1, validator1))[0], BigInt(currentTime - d1Start) * BigInt(13) * ethers.parseEther('10') / BigInt(86400*365*100));
+            assert.equal((await stakeManager.delegatorEarnedPerValidator(delegator1, validator1))[1], 0);
 
             v2Earned = await stakeManager.validatorEarned(validator2);
             v1Earned = await stakeManager.validatorEarned(validator1);
-            d21Earned = await stakeManager.delegatorEarned(delegator2_1);
-            d22Earned = await stakeManager.delegatorEarned(delegator2_2);
-            d1Earned = await stakeManager.delegatorEarned(delegator1);
+            d21Earned = await stakeManager.delegatorEarnedPerValidator(delegator2_1, validator2);
+            d22Earned = await stakeManager.delegatorEarnedPerValidator(delegator2_2, validator2);
+            d1Earned = await stakeManager.delegatorEarnedPerValidator(delegator1, validator1);
 
             // validator call for withdraw
             await stakeManager.connect(validator2).validatorCallForWithdraw();
@@ -484,14 +493,14 @@ describe("CRATStakeManager", function () {
             await time.increase(100);
             assert.equal((await stakeManager.validatorEarned(validator2))[0], validatorInfo.fixedReward.fixedReward);
             assert.equal((await stakeManager.validatorEarned(validator2))[1], validatorInfo.variableReward.variableReward);
-            assert.equal((await stakeManager.delegatorEarned(delegator2_1))[0], d21Earned[0]);
-            assert.equal((await stakeManager.delegatorEarned(delegator2_1))[1], d21Earned[1]);
-            assert.equal((await stakeManager.delegatorEarned(delegator2_2))[0], BigInt(v2CalledForWithdraw - d22Start) * BigInt(13) * ethers.parseEther('40') / BigInt(100*86400*365));
-            assert.equal((await stakeManager.delegatorEarned(delegator2_2))[1], d22Earned[1]);
+            assert.equal((await stakeManager.delegatorEarnedPerValidator(delegator2_1, validator2))[0], d21Earned[0]);
+            assert.equal((await stakeManager.delegatorEarnedPerValidator(delegator2_1, validator2))[1], d21Earned[1]);
+            assert.equal((await stakeManager.delegatorEarnedPerValidator(delegator2_2, validator2))[0], BigInt(v2CalledForWithdraw - d22Start) * BigInt(13) * ethers.parseEther('40') / BigInt(100*86400*365));
+            assert.equal((await stakeManager.delegatorEarnedPerValidator(delegator2_2, validator2))[1], d22Earned[1]);
 
             v2Earned = await stakeManager.validatorEarned(validator2);
-            d21Earned = await stakeManager.delegatorEarned(delegator2_1);
-            d22Earned = await stakeManager.delegatorEarned(delegator2_2);
+            d21Earned = await stakeManager.delegatorEarnedPerValidator(delegator2_1, validator2);
+            d22Earned = await stakeManager.delegatorEarnedPerValidator(delegator2_2, validator2);
 
             await expect(stakeManager.connect(validator2).validatorCallForWithdraw()).to.be.revertedWith("CRATStakeManager: not active validator");
             await expect(stakeManager.connect(validator2).withdrawAsValidator()).to.be.revertedWith("CRATStakeManager: withdraw cooldown");
@@ -503,47 +512,48 @@ describe("CRATStakeManager", function () {
             fee = ethers.parseEther('1') * BigInt(231) / BigInt(10000);
             assert.equal((await stakeManager.validatorEarned(validator2))[0], v2Earned[0]);
             assert.equal((await stakeManager.validatorEarned(validator2))[1], v2Earned[1] + ethers.parseEther('1') - fee);
-            assert.equal((await stakeManager.delegatorEarned(delegator2_1))[0], d21Earned[0]);
-            assert.equal((await stakeManager.delegatorEarned(delegator2_1))[1], d21Earned[1] + fee / BigInt(5));
-            assert.equal((await stakeManager.delegatorEarned(delegator2_2))[0], d22Earned[0]);
-            assert.equal((await stakeManager.delegatorEarned(delegator2_2))[1], d22Earned[1] + fee * BigInt(4) / BigInt(5));
+            assert.equal((await stakeManager.delegatorEarnedPerValidator(delegator2_1, validator2))[0], d21Earned[0]);
+            assert.equal((await stakeManager.delegatorEarnedPerValidator(delegator2_1, validator2))[1], d21Earned[1] + fee / BigInt(5));
+            assert.equal((await stakeManager.delegatorEarnedPerValidator(delegator2_2, validator2))[0], d22Earned[0]);
+            assert.equal((await stakeManager.delegatorEarnedPerValidator(delegator2_2, validator2))[1], d22Earned[1] + fee * BigInt(4) / BigInt(5));
 
             assert.equal((await stakeManager.validatorEarned(validator1))[0], BigInt(currentTime - v1Start) * BigInt(15) * ethers.parseEther('100') / BigInt(86400*100*365));
             assert.equal((await stakeManager.validatorEarned(validator1))[1], v1Earned[1] + ethers.parseEther('1'));
-            assert.equal((await stakeManager.delegatorEarned(delegator1))[0], BigInt(currentTime - d1Start) * ethers.parseEther('10') * BigInt(13) / BigInt(86400*100*365));
-            assert.equal((await stakeManager.delegatorEarned(delegator1))[1], 0);
+            assert.equal((await stakeManager.delegatorEarnedPerValidator(delegator1, validator1))[0], BigInt(currentTime - d1Start) * ethers.parseEther('10') * BigInt(13) / BigInt(86400*100*365));
+            assert.equal((await stakeManager.delegatorEarnedPerValidator(delegator1, validator1))[1], 0);
 
             v2Earned = await stakeManager.validatorEarned(validator2);
             v1Earned = await stakeManager.validatorEarned(validator1);
-            d21Earned = await stakeManager.delegatorEarned(delegator2_1);
-            d22Earned = await stakeManager.delegatorEarned(delegator2_2);
-            d1Earned = await stakeManager.delegatorEarned(delegator1);
+            d21Earned = await stakeManager.delegatorEarnedPerValidator(delegator2_1, validator2);
+            d22Earned = await stakeManager.delegatorEarnedPerValidator(delegator2_2, validator2);
+            d1Earned = await stakeManager.delegatorEarnedPerValidator(delegator1, validator1);
 
             assert.equal(await stakeManager.forFixedReward(), 0);
             await owner.sendTransaction({to: stakeManager.target, value: ethers.parseEther('100')});
             assert.equal(await stakeManager.forFixedReward(), ethers.parseEther('100'));
-            await expect(stakeManager.connect(validator2).claim()).to.changeEtherBalances([stakeManager, validator2], [-(v2Earned[0] + v2Earned[1]), v2Earned[0] + v2Earned[1]]);
+            await expect(stakeManager.connect(validator2).claimAsValidator()).to.changeEtherBalances([stakeManager, validator2], [-(v2Earned[0] + v2Earned[1]), v2Earned[0] + v2Earned[1]]);
             let fixedRewardPool = await stakeManager.forFixedReward();
             assert.equal(fixedRewardPool, ethers.parseEther('100') - v2Earned[0]);
             assert.equal((await stakeManager.validatorEarned(validator2))[0], 0);
             assert.equal((await stakeManager.validatorEarned(validator2))[1], 0);
 
             await time.increase(time.duration.days(14));
-            await expect(stakeManager.connect(validator2).restake()).to.be.revertedWith("CRATStakeManager: nothing to restake");
-            await expect(stakeManager.connect(validator2).claim()).to.changeEtherBalances([stakeManager, validator2], [0,0]);
+            await expect(stakeManager.connect(validator2).restakeAsValidator()).to.be.revertedWith("CRATStakeManager: nothing to restake");
+            await expect(stakeManager.connect(validator2).claimAsValidator()).to.changeEtherBalances([stakeManager, validator2], [0,0]);
 
             // delegator withdraw
-            await expect(stakeManager.connect(delegator2_1).withdrawAsDelegator()).to.changeEtherBalances([stakeManager, delegator2_1], [-(ethers.parseEther('10') + d21Earned[0] + d21Earned[1]), ethers.parseEther('10') + d21Earned[0] + d21Earned[1]]);
+            await expect(stakeManager.connect(delegator2_1).withdrawAsDelegator(validator2)).to.changeEtherBalances([stakeManager, delegator2_1], [-(ethers.parseEther('10') + d21Earned[0] + d21Earned[1]), ethers.parseEther('10') + d21Earned[0] + d21Earned[1]]);
             delegatorInfo = await stakeManager.getDelegatorInfo(delegator2_1);
-            assert.equal(delegatorInfo.validator, ZERO_ADDRESS);
-            assert.equal(delegatorInfo.amount, 0);
-            assert.equal(delegatorInfo.lastClaim, 0);
-            assert.equal(delegatorInfo.calledForWithdraw, 0);
-            assert.equal(delegatorInfo.fixedReward.apr, 0);
-            assert.equal(delegatorInfo.fixedReward.lastUpdate, 0);
-            assert.equal(delegatorInfo.fixedReward.fixedReward, 0);
-            assert.equal(delegatorInfo.variableReward.variableReward.variableReward, 0);
-            assert.equal(delegatorInfo.variableReward.storedAcc, 0);
+            assert.equal(delegatorInfo.delegatorPerValidatorArr.length, 0);
+            assert.equal(delegatorInfo.validatorsArr.length, 0);
+            // assert.equal(delegatorInfo.delegatorPerValidatorArr[0].amount, 0);
+            // assert.equal(delegatorInfo.delegatorPerValidatorArr[0].lastClaim, 0);
+            // assert.equal(delegatorInfo.delegatorPerValidatorArr[0].calledForWithdraw, 0);
+            // assert.equal(delegatorInfo.delegatorPerValidatorArr[0].fixedReward.apr, 0);
+            // assert.equal(delegatorInfo.delegatorPerValidatorArr[0].fixedReward.lastUpdate, 0);
+            // assert.equal(delegatorInfo.delegatorPerValidatorArr[0].fixedReward.fixedReward, 0);
+            // assert.equal(delegatorInfo.delegatorPerValidatorArr[0].variableReward.variableReward, 0);
+            // assert.equal(delegatorInfo.delegatorPerValidatorArr[0].storedValidatorAcc, 0);
 
             assert.equal(await stakeManager.totalDelegatorsPool(), ethers.parseEther('10'));
             assert.equal(await stakeManager.totalValidatorsPool(), ethers.parseEther('100'));
@@ -579,15 +589,16 @@ describe("CRATStakeManager", function () {
             assert.equal(validatorInfo.stoppedDelegatedAmount, 0);
             assert.equal(validatorInfo.delegatorsAcc, 0);
             delegatorInfo = await stakeManager.getDelegatorInfo(delegator2_2);
-            assert.equal(delegatorInfo.validator, ZERO_ADDRESS);
-            assert.equal(delegatorInfo.amount, 0);
-            assert.equal(delegatorInfo.lastClaim, 0);
-            assert.equal(delegatorInfo.calledForWithdraw, 0);
-            assert.equal(delegatorInfo.fixedReward.apr, 0);
-            assert.equal(delegatorInfo.fixedReward.lastUpdate, 0);
-            assert.equal(delegatorInfo.fixedReward.fixedReward, 0);
-            assert.equal(delegatorInfo.variableReward.variableReward.variableReward, 0);
-            assert.equal(delegatorInfo.variableReward.storedAcc, 0);
+            assert.equal(delegatorInfo.delegatorPerValidatorArr.length, 0);
+            assert.equal(delegatorInfo.validatorsArr.length, 0);
+            // assert.equal(delegatorInfo.amount, 0);
+            // assert.equal(delegatorInfo.lastClaim, 0);
+            // assert.equal(delegatorInfo.calledForWithdraw, 0);
+            // assert.equal(delegatorInfo.fixedReward.apr, 0);
+            // assert.equal(delegatorInfo.fixedReward.lastUpdate, 0);
+            // assert.equal(delegatorInfo.fixedReward.fixedReward, 0);
+            // assert.equal(delegatorInfo.variableReward.variableReward.variableReward, 0);
+            // assert.equal(delegatorInfo.variableReward.storedAcc, 0);
 
             // close validators limit
             await expect(stakeManager.connect(validator1).setValidatorsLimit(0)).to.be.revertedWithCustomError(stakeManager, "AccessControlUnauthorizedAccount");
@@ -600,18 +611,20 @@ describe("CRATStakeManager", function () {
 
             await expect(stakeManager.connect(validator1).withdrawAsValidator()).to.be.revertedWith("CRATStakeManager: withdraw cooldown");
             let fixedReward = BigInt(v1CalledForWithdraw - d1Start) * BigInt(13) * ethers.parseEther('10') / BigInt(100*86400*365);
-            await expect(stakeManager.withdrawForDelegator(delegator1)).to.changeEtherBalances([delegator1, stakeManager], [ethers.parseEther('10') + d1Earned[1] + fixedReward, -(ethers.parseEther('10') + d1Earned[1] + fixedReward)]);
+            await expect(stakeManager.withdrawForDelegator(delegator1, validator1)).to.changeEtherBalances([delegator1, stakeManager], [ethers.parseEther('10') + d1Earned[1] + fixedReward, -(ethers.parseEther('10') + d1Earned[1] + fixedReward)]);
             assert.equal(await stakeManager.forFixedReward(), fixedRewardPool - fixedReward);
             delegatorInfo = await stakeManager.getDelegatorInfo(delegator1);
-            assert.equal(delegatorInfo.validator, ZERO_ADDRESS);
-            assert.equal(delegatorInfo.amount, 0);
-            assert.equal(delegatorInfo.lastClaim, 0);
-            assert.equal(delegatorInfo.calledForWithdraw, 0);
-            assert.equal(delegatorInfo.fixedReward.apr, 0);
-            assert.equal(delegatorInfo.fixedReward.lastUpdate, 0);
-            assert.equal(delegatorInfo.fixedReward.fixedReward, 0);
-            assert.equal(delegatorInfo.variableReward.variableReward.variableReward, 0);
-            assert.equal(delegatorInfo.variableReward.storedAcc, 0);
+            assert.equal(delegatorInfo.delegatorPerValidatorArr.length, 0);
+            assert.equal(delegatorInfo.validatorsArr.length, 0);
+            // assert.equal(delegatorInfo.validator, ZERO_ADDRESS);
+            // assert.equal(delegatorInfo.amount, 0);
+            // assert.equal(delegatorInfo.lastClaim, 0);
+            // assert.equal(delegatorInfo.calledForWithdraw, 0);
+            // assert.equal(delegatorInfo.fixedReward.apr, 0);
+            // assert.equal(delegatorInfo.fixedReward.lastUpdate, 0);
+            // assert.equal(delegatorInfo.fixedReward.fixedReward, 0);
+            // assert.equal(delegatorInfo.variableReward.variableReward.variableReward, 0);
+            // assert.equal(delegatorInfo.variableReward.storedAcc, 0);
             validatorInfo = await stakeManager.getValidatorInfo(validator1);
             assert.equal(validatorInfo.delegatedAmount, 0);
             assert.equal(validatorInfo.stoppedDelegatedAmount, 0);
@@ -646,10 +659,10 @@ describe("CRATStakeManager", function () {
 
           let v1Reward = await stakeManager.validatorEarned(validator1);
           let v2Reward = await stakeManager.validatorEarned(validator2);
-          let d1Reward = await stakeManager.delegatorEarned(delegator1);
-          let d21Reward = await stakeManager.delegatorEarned(delegator2_1);
-          let d22Reward = await stakeManager.delegatorEarned(delegator2_2);
-          let ownerReward = await stakeManager.delegatorEarned(owner);
+          let d1Reward = await stakeManager.delegatorEarnedPerValidator(delegator1, validator1);
+          let d21Reward = await stakeManager.delegatorEarnedPerValidator(delegator2_1, validator2);
+          let d22Reward = await stakeManager.delegatorEarnedPerValidator(delegator2_2, validator2);
+          let ownerReward = await stakeManager.delegatorEarnedPerValidator(owner, validator1);
 
           await expect(stakeManager.slash([])).to.be.revertedWithCustomError(stakeManager, "AccessControlUnauthorizedAccount");
           await expect(stakeManager.connect(distributor).slash([owner])).to.changeEtherBalances([stakeManager, slashReceiver], [0,0]);
@@ -671,28 +684,28 @@ describe("CRATStakeManager", function () {
           assert.equal(validatorInfo.variableReward.variableReward, v2Reward[1]);
 
           let delegatorInfo = await stakeManager.getDelegatorInfo(delegator1);
-          assert.equal(delegatorInfo.amount, ethers.parseEther('10') - ethers.parseEther('10') * BigInt(5) / BigInt(100));
-          assert.equal(delegatorInfo.calledForWithdraw, 0);
-          assert.equal(delegatorInfo.fixedReward.fixedReward, d1Reward[0] + BigInt(3) * ethers.parseEther('10') * BigInt(13) / BigInt(100 * 86400 * 365) + BigInt(1));
-          assert.equal(delegatorInfo.variableReward.variableReward.variableReward, d1Reward[1]);
+          assert.equal(delegatorInfo.delegatorPerValidatorArr[0].amount, ethers.parseEther('10') - ethers.parseEther('10') * BigInt(5) / BigInt(100));
+          assert.equal(delegatorInfo.delegatorPerValidatorArr[0].calledForWithdraw, 0);
+          assert.equal(delegatorInfo.delegatorPerValidatorArr[0].fixedReward.fixedReward, d1Reward[0] + BigInt(3) * ethers.parseEther('10') * BigInt(13) / BigInt(100 * 86400 * 365) + BigInt(1));
+          assert.equal(delegatorInfo.delegatorPerValidatorArr[0].variableReward.variableReward, d1Reward[1]);
 
           delegatorInfo = await stakeManager.getDelegatorInfo(owner);
-          assert.equal(delegatorInfo.amount, ethers.parseEther('20') - ethers.parseEther('20') * BigInt(5) / BigInt(100));
-          assert.equal(delegatorInfo.calledForWithdraw, 0);
-          assert.equal(delegatorInfo.fixedReward.fixedReward, ownerReward[0] + BigInt(3) * ethers.parseEther('20') * BigInt(13) / BigInt(100 * 86400 * 365));
-          assert.equal(delegatorInfo.variableReward.variableReward.variableReward, ownerReward[1]);
+          assert.equal(delegatorInfo.delegatorPerValidatorArr[0].amount, ethers.parseEther('20') - ethers.parseEther('20') * BigInt(5) / BigInt(100));
+          assert.equal(delegatorInfo.delegatorPerValidatorArr[0].calledForWithdraw, 0);
+          assert.equal(delegatorInfo.delegatorPerValidatorArr[0].fixedReward.fixedReward, ownerReward[0] + BigInt(3) * ethers.parseEther('20') * BigInt(13) / BigInt(100 * 86400 * 365));
+          assert.equal(delegatorInfo.delegatorPerValidatorArr[0].variableReward.variableReward, ownerReward[1]);
 
           delegatorInfo = await stakeManager.getDelegatorInfo(delegator2_1);
-          assert.equal(delegatorInfo.amount, ethers.parseEther('10') - ethers.parseEther('10') * BigInt(5) / BigInt(100));
-          assert.equal(delegatorInfo.calledForWithdraw, currentTime);
-          assert.equal(delegatorInfo.fixedReward.fixedReward, d21Reward[0] + BigInt(3) * ethers.parseEther('10') * BigInt(13) / BigInt(100 * 86400 * 365) + BigInt(1));
-          assert.equal(delegatorInfo.variableReward.variableReward.variableReward, d21Reward[1]);
+          assert.equal(delegatorInfo.delegatorPerValidatorArr[0].amount, ethers.parseEther('10') - ethers.parseEther('10') * BigInt(5) / BigInt(100));
+          assert.equal(delegatorInfo.delegatorPerValidatorArr[0].calledForWithdraw, currentTime);
+          assert.equal(delegatorInfo.delegatorPerValidatorArr[0].fixedReward.fixedReward, d21Reward[0] + BigInt(3) * ethers.parseEther('10') * BigInt(13) / BigInt(100 * 86400 * 365) + BigInt(1));
+          assert.equal(delegatorInfo.delegatorPerValidatorArr[0].variableReward.variableReward, d21Reward[1]);
 
           delegatorInfo = await stakeManager.getDelegatorInfo(delegator2_2);
-          assert.equal(delegatorInfo.amount, ethers.parseEther('20') - ethers.parseEther('20') * BigInt(5) / BigInt(100));
-          assert.equal(delegatorInfo.calledForWithdraw, 0);
-          assert.equal(delegatorInfo.fixedReward.fixedReward, d22Reward[0] + BigInt(3) * ethers.parseEther('20') * BigInt(13) / BigInt(100 * 86400 * 365) + BigInt(1));
-          assert.equal(delegatorInfo.variableReward.variableReward.variableReward, d22Reward[1]);
+          assert.equal(delegatorInfo.delegatorPerValidatorArr[0].amount, ethers.parseEther('20') - ethers.parseEther('20') * BigInt(5) / BigInt(100));
+          assert.equal(delegatorInfo.delegatorPerValidatorArr[0].calledForWithdraw, 0);
+          assert.equal(delegatorInfo.delegatorPerValidatorArr[0].fixedReward.fixedReward, d22Reward[0] + BigInt(3) * ethers.parseEther('20') * BigInt(13) / BigInt(100 * 86400 * 365) + BigInt(1));
+          assert.equal(delegatorInfo.delegatorPerValidatorArr[0].variableReward.variableReward, d22Reward[1]);
 
           assert.equal(await stakeManager.totalValidatorsPool(), ethers.parseEther('190'));
           assert.equal(await stakeManager.totalDelegatorsPool(),ethers.parseEther('19'));
@@ -701,19 +714,19 @@ describe("CRATStakeManager", function () {
 
           v1Reward = await stakeManager.validatorEarned(validator1);
           v2Reward = await stakeManager.validatorEarned(validator2);
-          d1Reward = await stakeManager.delegatorEarned(delegator1);
-          d21Reward = await stakeManager.delegatorEarned(delegator2_1);
-          d22Reward = await stakeManager.delegatorEarned(delegator2_2);
-          ownerReward = await stakeManager.delegatorEarned(owner);
+          d1Reward = await stakeManager.delegatorEarnedPerValidator(delegator1, validator1);
+          d21Reward = await stakeManager.delegatorEarnedPerValidator(delegator2_1, validator2);
+          d22Reward = await stakeManager.delegatorEarnedPerValidator(delegator2_2, validator2);
+          ownerReward = await stakeManager.delegatorEarnedPerValidator(owner, validator1);
 
           await time.increase(time.duration.days(1));
 
           assert.equal((await stakeManager.validatorEarned(validator1)).fixedReward, v1Reward.fixedReward);
           assert.equal((await stakeManager.validatorEarned(validator2)).fixedReward, v2Reward.fixedReward + BigInt(86400) * ethers.parseEther('190') * BigInt(15) / BigInt(86400 * 365 * 100));
-          assert.equal((await stakeManager.delegatorEarned(delegator1)).fixedReward, d1Reward.fixedReward);
-          assert.equal((await stakeManager.delegatorEarned(owner)).fixedReward, ownerReward.fixedReward);
-          assert.equal((await stakeManager.delegatorEarned(delegator2_1)).fixedReward, d21Reward.fixedReward);
-          assert.equal((await stakeManager.delegatorEarned(delegator2_2)).fixedReward, d22Reward.fixedReward + BigInt(86400) * ethers.parseEther('19') * BigInt(13) / BigInt(86400 * 365 * 100));
+          assert.equal((await stakeManager.delegatorEarnedPerValidator(delegator1, validator1)).fixedReward, d1Reward.fixedReward);
+          assert.equal((await stakeManager.delegatorEarnedPerValidator(owner, validator1)).fixedReward, ownerReward.fixedReward);
+          assert.equal((await stakeManager.delegatorEarnedPerValidator(delegator2_1, validator2)).fixedReward, d21Reward.fixedReward);
+          assert.equal((await stakeManager.delegatorEarnedPerValidator(delegator2_2, validator2)).fixedReward, d22Reward.fixedReward + BigInt(86400) * ethers.parseEther('19') * BigInt(13) / BigInt(86400 * 365 * 100));
 
           // another slashing call for already stopped validator (withdraw all of his funds!!!)
           totalSlashed = ethers.parseEther('90') + (ethers.parseEther('9.5') + ethers.parseEther('19')) * BigInt(5) / BigInt(100);
@@ -730,22 +743,22 @@ describe("CRATStakeManager", function () {
           assert.equal((await stakeManager.validatorEarned(validator1))[1], v1Reward[1]);
 
           delegatorInfo = await stakeManager.getDelegatorInfo(delegator1);
-          assert.equal(delegatorInfo.amount, ethers.parseEther('9.5') - ethers.parseEther('9.5') * BigInt(5) / BigInt(100));
-          assert.equal(delegatorInfo.calledForWithdraw, 0);
-          assert.equal(delegatorInfo.fixedReward.fixedReward, d1Reward[0]);
-          assert.equal(delegatorInfo.variableReward.variableReward.variableReward, d1Reward[1]);
+          assert.equal(delegatorInfo.delegatorPerValidatorArr[0].amount, ethers.parseEther('9.5') - ethers.parseEther('9.5') * BigInt(5) / BigInt(100));
+          assert.equal(delegatorInfo.delegatorPerValidatorArr[0].calledForWithdraw, 0);
+          assert.equal(delegatorInfo.delegatorPerValidatorArr[0].fixedReward.fixedReward, d1Reward[0]);
+          assert.equal(delegatorInfo.delegatorPerValidatorArr[0].variableReward.variableReward, d1Reward[1]);
 
-          assert.equal((await stakeManager.delegatorEarned(delegator1))[0], d1Reward[0]);
-          assert.equal((await stakeManager.delegatorEarned(delegator1))[1], d1Reward[1]);
+          assert.equal((await stakeManager.delegatorEarnedPerValidator(delegator1, validator1))[0], d1Reward[0]);
+          assert.equal((await stakeManager.delegatorEarnedPerValidator(delegator1, validator1))[1], d1Reward[1]);
 
           delegatorInfo = await stakeManager.getDelegatorInfo(owner);
-          assert.equal(delegatorInfo.amount, ethers.parseEther('19') - ethers.parseEther('19') * BigInt(5) / BigInt(100));
-          assert.equal(delegatorInfo.calledForWithdraw, 0);
-          assert.equal(delegatorInfo.fixedReward.fixedReward, ownerReward[0]);
-          assert.equal(delegatorInfo.variableReward.variableReward.variableReward, ownerReward[1]);
+          assert.equal(delegatorInfo.delegatorPerValidatorArr[0].amount, ethers.parseEther('19') - ethers.parseEther('19') * BigInt(5) / BigInt(100));
+          assert.equal(delegatorInfo.delegatorPerValidatorArr[0].calledForWithdraw, 0);
+          assert.equal(delegatorInfo.delegatorPerValidatorArr[0].fixedReward.fixedReward, ownerReward[0]);
+          assert.equal(delegatorInfo.delegatorPerValidatorArr[0].variableReward.variableReward, ownerReward[1]);
 
-          assert.equal((await stakeManager.delegatorEarned(owner))[0], ownerReward[0]);
-          assert.equal((await stakeManager.delegatorEarned(owner))[1], ownerReward[1]);
+          assert.equal((await stakeManager.delegatorEarnedPerValidator(owner, validator1))[0], ownerReward[0]);
+          assert.equal((await stakeManager.delegatorEarnedPerValidator(owner, validator1))[1], ownerReward[1]);
 
           assert.equal(await stakeManager.totalValidatorsPool(), ethers.parseEther('190'));
           assert.equal(await stakeManager.totalDelegatorsPool(),ethers.parseEther('19'));
@@ -756,21 +769,21 @@ describe("CRATStakeManager", function () {
           await owner.sendTransaction({value: v1Reward[0] , to: stakeManager.target});
 
           // not possible to restake
-          await expect(stakeManager.connect(validator1).restake()).to.be.revertedWith("CRATStakeManager: in stop list");
+          await expect(stakeManager.connect(validator1).restakeAsValidator()).to.be.revertedWith("CRATStakeManager: in stop list");
 
           // but possible to claim rewards
-          await expect(stakeManager.connect(validator1).claim()).to.changeEtherBalances([stakeManager, validator1], [-v1Reward[0] -v1Reward[1], v1Reward[0] + v1Reward[1]]);
+          await expect(stakeManager.connect(validator1).claimAsValidator()).to.changeEtherBalances([stakeManager, validator1], [-v1Reward[0] -v1Reward[1], v1Reward[0] + v1Reward[1]]);
           assert.equal((await stakeManager.validatorEarned(validator1))[0], 0);
           assert.equal((await stakeManager.validatorEarned(validator1))[1], 0);
           assert.equal((await stakeManager.getValidatorInfo(validator1)).lastClaim, await time.latest());
-          await expect(stakeManager.connect(validator1).claim()).to.changeEtherBalances([stakeManager, validator1], [0, 0]);
+          await expect(stakeManager.connect(validator1).claimAsValidator()).to.changeEtherBalances([stakeManager, validator1], [0, 0]);
           assert.equal((await stakeManager.getValidatorInfo(validator1)).lastClaim, await time.latest() - 1);
 
           // await expect(stakeManager.connect(distributor).slash([validator1])).to.changeEtherBalances([stakeManager, slashReceiver], [-ethers.parseEther('1.35375'), ethers.parseEther('1.35375')]); // try to slash validator with 0 amount - passed
 
-          await expect(stakeManager.connect(delegator1).reviveAsDelegator({value: 0})).to.be.revertedWith("CRATStakeManager: can not revive"); // under the threshold
-          await expect(stakeManager.connect(delegator1).reviveAsDelegator({value: ethers.parseEther('10')})).to.be.revertedWith("CRATStakeManager: can not revive"); // validator stopped
-          await expect(stakeManager.connect(delegator2_2).reviveAsDelegator({value: ethers.parseEther('10')})).to.be.revertedWith("CRATStakeManager: can not revive"); // this delegator didn't call for withdraw
+          await expect(stakeManager.connect(delegator1).reviveAsDelegator(validator1, {value: 0})).to.be.revertedWith("CRATStakeManager: can not revive"); // under the threshold
+          await expect(stakeManager.connect(delegator1).reviveAsDelegator(validator1, {value: ethers.parseEther('10')})).to.be.revertedWith("CRATStakeManager: can not revive"); // validator stopped
+          await expect(stakeManager.connect(delegator2_2).reviveAsDelegator(validator2, {value: ethers.parseEther('10')})).to.be.revertedWith("CRATStakeManager: can not revive"); // this delegator didn't call for withdraw
 
           await expect(stakeManager.connect(delegator1).reviveAsValidator()).to.be.revertedWith("CRATStakeManager: no withdraw call");
           await expect(stakeManager.connect(validator2).reviveAsValidator()).to.be.revertedWith("CRATStakeManager: no withdraw call");
@@ -783,11 +796,11 @@ describe("CRATStakeManager", function () {
           await time.increase(time.duration.days(16)); // claim cooldown for delegators
 
           await distributor.sendTransaction({to: stakeManager.target, value: ethers.parseEther('100')});
-          await expect(stakeManager.connect(delegator1).claim()).to.changeEtherBalances([stakeManager, delegator1], [-(d1Reward[0] + d1Reward[1]), d1Reward[0] + d1Reward[1]]);
-          await stakeManager.connect(delegator1).delegatorCallForWithdraw();
-          assert.equal((await stakeManager.delegatorEarned(delegator1))[0], 0);
-          assert.equal((await stakeManager.delegatorEarned(delegator1))[1], 0);
-          assert.equal((await stakeManager.getDelegatorInfo(delegator1)).calledForWithdraw, await time.latest());
+          await expect(stakeManager.connect(delegator1).claimAsDelegatorPerValidator(validator1)).to.changeEtherBalances([stakeManager, delegator1], [-(d1Reward[0] + d1Reward[1]), d1Reward[0] + d1Reward[1]]);
+          await stakeManager.connect(delegator1).delegatorCallForWithdraw(validator1);
+          assert.equal((await stakeManager.delegatorEarnedPerValidator(delegator1, validator1))[0], 0);
+          assert.equal((await stakeManager.delegatorEarnedPerValidator(delegator1, validator1))[1], 0);
+          assert.equal((await stakeManager.getDelegatorInfo(delegator1)).delegatorPerValidatorArr[0].calledForWithdraw, await time.latest());
           // total balances hasn't been changed (cause this delegator is stopped)
           assert.equal(await stakeManager.totalValidatorsPool(), ethers.parseEther('190'));
           assert.equal(await stakeManager.totalDelegatorsPool(),ethers.parseEther('19'));
@@ -815,8 +828,8 @@ describe("CRATStakeManager", function () {
           await stakeManager.connect(distributor).slash([validator1]);
 
           let v1Reward = await stakeManager.validatorEarned(validator1);
-          let d1Reward = await stakeManager.delegatorEarned(delegator1);
-          let d21Reward = await stakeManager.delegatorEarned(delegator2_1);
+          let d1Reward = await stakeManager.delegatorEarnedPerValidator(delegator1, validator1);
+          let d21Reward = await stakeManager.delegatorEarnedPerValidator(delegator2_1, validator1);
 
           assert.equal((await stakeManager.getValidatorInfo(validator1)).calledForWithdraw, await time.latest());
           assert.equal(await stakeManager.stoppedValidatorsPool(), ethers.parseEther('90'));
@@ -825,7 +838,7 @@ describe("CRATStakeManager", function () {
           await time.increase(86400);
 
           // one user call for withdraw
-          await stakeManager.connect(delegator1).delegatorCallForWithdraw();
+          await stakeManager.connect(delegator1).delegatorCallForWithdraw(validator1);
           let d1CalledForWithdraw = await time.latest();
 
           await time.increase(86400);
@@ -852,51 +865,48 @@ describe("CRATStakeManager", function () {
           assert.equal((await stakeManager.validatorEarned(validator1))[1], v1Reward[1]);
 
           let delegatorInfo = await stakeManager.getDelegatorInfo(delegator1);
-          assert.equal(delegatorInfo.amount, ethers.parseEther('10') * BigInt(95) / BigInt(100));
-          assert.equal(delegatorInfo.validator, validator1.address);
-          assert.equal(delegatorInfo.lastClaim, v1Start + 1);
-          assert.equal(delegatorInfo.calledForWithdraw, d1CalledForWithdraw);
-          assert.equal(delegatorInfo.fixedReward.apr, 1300);
-          assert.equal(delegatorInfo.fixedReward.lastUpdate, d1CalledForWithdraw);
-          assert.equal(delegatorInfo.fixedReward.fixedReward, d1Reward[0]);
-          assert.equal(delegatorInfo.variableReward.variableReward.variableReward, d1Reward[1]);
+          assert.equal(delegatorInfo.delegatorPerValidatorArr[0].amount, ethers.parseEther('10') * BigInt(95) / BigInt(100));
+          assert.equal(delegatorInfo.delegatorPerValidatorArr[0].lastClaim, v1Start + 1);
+          assert.equal(delegatorInfo.delegatorPerValidatorArr[0].calledForWithdraw, d1CalledForWithdraw);
+          assert.equal(delegatorInfo.delegatorPerValidatorArr[0].fixedReward.apr, 1300);
+          assert.equal(delegatorInfo.delegatorPerValidatorArr[0].fixedReward.lastUpdate, d1CalledForWithdraw);
+          assert.equal(delegatorInfo.delegatorPerValidatorArr[0].fixedReward.fixedReward, d1Reward[0]);
+          assert.equal(delegatorInfo.delegatorPerValidatorArr[0].variableReward.variableReward, d1Reward[1]);
 
-          assert.equal((await stakeManager.delegatorEarned(delegator1))[0], d1Reward[0]);
-          assert.equal((await stakeManager.delegatorEarned(delegator1))[1], d1Reward[1]);
+          assert.equal((await stakeManager.delegatorEarnedPerValidator(delegator1, validator1))[0], d1Reward[0]);
+          assert.equal((await stakeManager.delegatorEarnedPerValidator(delegator1, validator1))[1], d1Reward[1]);
 
           delegatorInfo = await stakeManager.getDelegatorInfo(delegator2_1);
-          assert.equal(delegatorInfo.amount, ethers.parseEther('20') * BigInt(95) / BigInt(100));
-          assert.equal(delegatorInfo.validator, validator1.address);
-          assert.equal(delegatorInfo.lastClaim, v1Start + 2);
-          assert.equal(delegatorInfo.calledForWithdraw, 0);
-          assert.equal(delegatorInfo.fixedReward.apr, 1300);
-          assert.equal(delegatorInfo.fixedReward.lastUpdate, await time.latest());
-          assert.equal(delegatorInfo.fixedReward.fixedReward, d21Reward[0]);
-          assert.equal(delegatorInfo.variableReward.variableReward.variableReward, d21Reward[1]);
+          assert.equal(delegatorInfo.delegatorPerValidatorArr[0].amount, ethers.parseEther('20') * BigInt(95) / BigInt(100));
+          assert.equal(delegatorInfo.delegatorPerValidatorArr[0].lastClaim, v1Start + 2);
+          assert.equal(delegatorInfo.delegatorPerValidatorArr[0].calledForWithdraw, 0);
+          assert.equal(delegatorInfo.delegatorPerValidatorArr[0].fixedReward.apr, 1300);
+          assert.equal(delegatorInfo.delegatorPerValidatorArr[0].fixedReward.lastUpdate, await time.latest());
+          assert.equal(delegatorInfo.delegatorPerValidatorArr[0].fixedReward.fixedReward, d21Reward[0]);
+          assert.equal(delegatorInfo.delegatorPerValidatorArr[0].variableReward.variableReward, d21Reward[1]);
 
-          assert.equal((await stakeManager.delegatorEarned(delegator2_1))[0], d21Reward[0]);
-          assert.equal((await stakeManager.delegatorEarned(delegator2_1))[1], d21Reward[1]);
+          assert.equal((await stakeManager.delegatorEarnedPerValidator(delegator2_1, validator1))[0], d21Reward[0]);
+          assert.equal((await stakeManager.delegatorEarnedPerValidator(delegator2_1, validator1))[1], d21Reward[1]);
 
           await time.increase(86400);
           assert.equal((await stakeManager.validatorEarned(validator1))[0], v1Reward[0] + ethers.parseEther('100') * BigInt(15) * BigInt(86400) / BigInt(100*86400*365));
           assert.equal((await stakeManager.validatorEarned(validator1))[1], v1Reward[1]);
-          assert.equal((await stakeManager.delegatorEarned(delegator1))[0], d1Reward[0]);
-          assert.equal((await stakeManager.delegatorEarned(delegator1))[1], d1Reward[1]);
-          assert.equal((await stakeManager.delegatorEarned(delegator2_1))[0], d21Reward[0] + (ethers.parseEther('20') * BigInt(95) / BigInt(100)) * BigInt(13) * BigInt(86400) / BigInt(100*86400*365));
-          assert.equal((await stakeManager.delegatorEarned(delegator2_1))[1], d21Reward[1]);
+          assert.equal((await stakeManager.delegatorEarnedPerValidator(delegator1, validator1))[0], d1Reward[0]);
+          assert.equal((await stakeManager.delegatorEarnedPerValidator(delegator1, validator1))[1], d1Reward[1]);
+          assert.equal((await stakeManager.delegatorEarnedPerValidator(delegator2_1, validator1))[0], d21Reward[0] + (ethers.parseEther('20') * BigInt(95) / BigInt(100)) * BigInt(13) * BigInt(86400) / BigInt(100*86400*365));
+          assert.equal((await stakeManager.delegatorEarnedPerValidator(delegator2_1, validator1))[1], d21Reward[1]);
 
-          await stakeManager.connect(delegator1).reviveAsDelegator({value: ethers.parseEther('0.5')});
+          await stakeManager.connect(delegator1).reviveAsDelegator(validator1, {value: ethers.parseEther('0.5')});
           delegatorInfo = await stakeManager.getDelegatorInfo(delegator1);
-          assert.equal(delegatorInfo.amount, ethers.parseEther('10'));
-          assert.equal(delegatorInfo.validator, validator1.address);
-          assert.equal(delegatorInfo.lastClaim, v1Start + 1);
-          assert.equal(delegatorInfo.calledForWithdraw, 0);
-          assert.equal(delegatorInfo.fixedReward.apr, 1300);
-          assert.equal(delegatorInfo.fixedReward.lastUpdate, await time.latest());
-          assert.equal(delegatorInfo.fixedReward.fixedReward, d1Reward[0]);
-          assert.equal(delegatorInfo.variableReward.variableReward.variableReward, d1Reward[1]);
-          assert.equal((await stakeManager.delegatorEarned(delegator1))[0], d1Reward[0]);
-          assert.equal((await stakeManager.delegatorEarned(delegator1))[1], d1Reward[1]);
+          assert.equal(delegatorInfo.delegatorPerValidatorArr[0].amount, ethers.parseEther('10'));
+          assert.equal(delegatorInfo.delegatorPerValidatorArr[0].lastClaim, v1Start + 1);
+          assert.equal(delegatorInfo.delegatorPerValidatorArr[0].calledForWithdraw, 0);
+          assert.equal(delegatorInfo.delegatorPerValidatorArr[0].fixedReward.apr, 1300);
+          assert.equal(delegatorInfo.delegatorPerValidatorArr[0].fixedReward.lastUpdate, await time.latest());
+          assert.equal(delegatorInfo.delegatorPerValidatorArr[0].fixedReward.fixedReward, d1Reward[0]);
+          assert.equal(delegatorInfo.delegatorPerValidatorArr[0].variableReward.variableReward, d1Reward[1]);
+          assert.equal((await stakeManager.delegatorEarnedPerValidator(delegator1, validator1))[0], d1Reward[0]);
+          assert.equal((await stakeManager.delegatorEarnedPerValidator(delegator1, validator1))[1], d1Reward[1]);
           assert.equal(await stakeManager.totalValidatorsPool(), ethers.parseEther('100'));
           assert.equal(await stakeManager.totalDelegatorsPool(), ethers.parseEther('10') + ethers.parseEther('20') * BigInt(95) / BigInt(100));
           assert.equal(await stakeManager.stoppedValidatorsPool(), 0);
@@ -906,8 +916,8 @@ describe("CRATStakeManager", function () {
 
           await time.increase(86400);
 
-          assert.equal((await stakeManager.delegatorEarned(delegator1))[0], d1Reward[0] + BigInt(86400) * ethers.parseEther('10') * BigInt(13) / BigInt(100*365*86400));
-          assert.equal((await stakeManager.delegatorEarned(delegator1))[1], d1Reward[1]);
+          assert.equal((await stakeManager.delegatorEarnedPerValidator(delegator1, validator1))[0], d1Reward[0] + BigInt(86400) * ethers.parseEther('10') * BigInt(13) / BigInt(100*365*86400));
+          assert.equal((await stakeManager.delegatorEarnedPerValidator(delegator1, validator1))[1], d1Reward[1]);
         })
 
         it("Other admin methods", async ()=> {
@@ -1090,6 +1100,7 @@ describe("CRATStakeManager", function () {
           assert.equal(totalRewards.fixedReward, ethers.parseEther('10') * BigInt(13 * 12) / BigInt(100 * 86400 * 365));
           assert.equal(totalRewards.variableReward, ethers.parseEther('25') * BigInt(5) / BigInt(100));
         })
+
         it("Total rewards calculation per validator/delegator check", async ()=> {
           const { stakeManager, validator1, owner, delegator1 , distributor } = await loadFixture(deployFixture);
 
@@ -1097,7 +1108,7 @@ describe("CRATStakeManager", function () {
           assert.equal(totalRewards.fixedReward, 0);
           assert.equal(totalRewards.variableReward, 0);
 
-          totalRewards = await stakeManager.totalDelegatorReward(delegator1);
+          totalRewards = await stakeManager.totalDelegatorRewardPerValidator(delegator1, validator1);
           assert.equal(totalRewards.fixedReward, 0);
           assert.equal(totalRewards.variableReward, 0);
 
@@ -1108,7 +1119,7 @@ describe("CRATStakeManager", function () {
           assert.equal(totalRewards.fixedReward, 0);
           assert.equal(totalRewards.variableReward, 0);
 
-          totalRewards = await stakeManager.totalDelegatorReward(delegator1);
+          totalRewards = await stakeManager.totalDelegatorRewardPerValidator(delegator1, validator1);
           assert.equal(totalRewards.fixedReward, 0);
           assert.equal(totalRewards.variableReward, 0);
 
@@ -1117,20 +1128,20 @@ describe("CRATStakeManager", function () {
           assert.equal(totalRewards.fixedReward, ethers.parseEther('100') * BigInt(15 * 5) / BigInt(100 * 86400 * 365));
           assert.equal(totalRewards.variableReward, 0);
 
-          totalRewards = await stakeManager.totalDelegatorReward(delegator1);
+          totalRewards = await stakeManager.totalDelegatorRewardPerValidator(delegator1, validator1);
           assert.equal(totalRewards.fixedReward, 0);
           assert.equal(totalRewards.variableReward, 0);
 
           await stakeManager.connect(delegator1).depositAsDelegator(validator1, {value: ethers.parseEther('10')});
           // let d1Start = await time.latest();
 
-          totalRewards = await stakeManager.totalDelegatorReward(delegator1);
+          totalRewards = await stakeManager.totalDelegatorRewardPerValidator(delegator1, validator1);
           assert.equal(totalRewards.fixedReward, 0);
           assert.equal(totalRewards.variableReward, 0);
 
           await time.increase(5);
 
-          totalRewards = await stakeManager.totalDelegatorReward(delegator1);
+          totalRewards = await stakeManager.totalDelegatorRewardPerValidator(delegator1, validator1);
           assert.equal(totalRewards.fixedReward, ethers.parseEther('10') * BigInt(13 * 5) / BigInt(100 * 86400 * 365));
           assert.equal(totalRewards.variableReward, 0);
 
@@ -1154,7 +1165,7 @@ describe("CRATStakeManager", function () {
           assert.equal(totalRewards.fixedReward, fixedReward + ethers.parseEther('110') * BigInt(15 * 6) / BigInt(100 * 86400 * 365));
           assert.equal(totalRewards.variableReward, ethers.parseEther('25') * BigInt(95) / BigInt(100));
 
-          totalRewards = await stakeManager.totalDelegatorReward(delegator1);
+          totalRewards = await stakeManager.totalDelegatorRewardPerValidator(delegator1, validator1);
           assert.equal(totalRewards.fixedReward, ethers.parseEther('10') * BigInt(13 * 12) / BigInt(100 * 86400 * 365));
           assert.equal(totalRewards.variableReward, ethers.parseEther('25') * BigInt(5) / BigInt(100));
 
@@ -1162,7 +1173,7 @@ describe("CRATStakeManager", function () {
 
           fixedReward += ethers.parseEther('110') * BigInt(15 * (8 + 86400*30)) / BigInt(100 * 86400 * 365);
           await owner.sendTransaction({value: fixedReward, to: stakeManager});
-          await stakeManager.connect(validator1).claim();
+          await stakeManager.connect(validator1).claimAsValidator();
           let info = await stakeManager.getValidatorInfo(validator1);
           assert.equal(info.fixedReward.totalClaimed, fixedReward);
           assert.equal(info.variableReward.totalClaimed, ethers.parseEther('25') * BigInt(95) / BigInt(100));
@@ -1175,24 +1186,296 @@ describe("CRATStakeManager", function () {
           assert.equal(totalRewards.fixedReward, fixedReward + ethers.parseEther('110') * BigInt(15 * 6) / BigInt(100 * 86400 * 365));
           assert.equal(totalRewards.variableReward, ethers.parseEther('39') * BigInt(95) / BigInt(100));
 
-          totalRewards = await stakeManager.totalDelegatorReward(delegator1);
+          totalRewards = await stakeManager.totalDelegatorRewardPerValidator(delegator1, validator1);
           assert.equal(totalRewards.fixedReward, ethers.parseEther('10') * BigInt(13 * (20 + 86400*30)) / BigInt(100 * 86400 * 365));
           assert.equal(totalRewards.variableReward, ethers.parseEther('39') * BigInt(5) / BigInt(100));
 
           let fixedRewardD = ethers.parseEther('10') * BigInt(13 * (22 + 86400*30)) / BigInt(100 * 86400 * 365);
           await owner.sendTransaction({value: fixedRewardD, to: stakeManager});
-          await stakeManager.connect(delegator1).claim();
+          await stakeManager.connect(delegator1).claimAsDelegatorPerValidator(validator1);
           info = await stakeManager.getDelegatorInfo(delegator1);
-          assert.equal(info.variableReward.variableReward.totalClaimed, ethers.parseEther('39') * BigInt(5) / BigInt(100));
-          assert.equal(info.fixedReward.totalClaimed, fixedRewardD);
+          assert.equal(info.delegatorPerValidatorArr[0].variableReward.totalClaimed, ethers.parseEther('39') * BigInt(5) / BigInt(100));
+          assert.equal(info.delegatorPerValidatorArr[0].fixedReward.totalClaimed, fixedRewardD);
 
           await time.increase(5);
 
           await stakeManager.connect(distributor).distributeRewards([validator1], [ethers.parseEther('2')], {value: ethers.parseEther('2')});
 
-          totalRewards = await stakeManager.totalDelegatorReward(delegator1);
+          totalRewards = await stakeManager.totalDelegatorRewardPerValidator(delegator1, validator1);
           assert.equal(totalRewards.fixedReward, fixedRewardD + ethers.parseEther('10') * BigInt(13 * 6) / BigInt(100 * 86400 * 365));
           assert.equal(totalRewards.variableReward, ethers.parseEther('41') * BigInt(5) / BigInt(100));
+        })
+
+        it("Deposit as delegator into several validators", async ()=> {
+          const { stakeManager, validator1, validator2, owner, delegator1, delegator2_1, distributor } = await loadFixture(deployFixture);
+
+          assert.equal((await stakeManager.totalValidatorsRewards()).fixedReward, 0);
+
+          await stakeManager.connect(validator1).depositAsValidator(500, {value: ethers.parseEther('100')});
+          let v1Start = await time.latest();
+          await stakeManager.setValidatorsAPR(1600);
+          let totalValidatorsRewards = ethers.parseEther('100') * BigInt(15) / BigInt(100 * time.duration.years(1));
+          assert.equal((await stakeManager.totalValidatorsRewards()).fixedReward, totalValidatorsRewards);
+          await stakeManager.connect(validator2).depositAsValidator(0, {value: ethers.parseEther('100')});
+          let v2Start = await time.latest();
+          totalValidatorsRewards += ethers.parseEther('100') * BigInt(16) / BigInt(100 * time.duration.years(1));
+          assert.equal((await stakeManager.totalValidatorsRewards()).fixedReward, totalValidatorsRewards);
+          await stakeManager.connect(owner).depositAsValidator(100, {value: ethers.parseEther('100')});
+          let ownerStart = await time.latest();
+          totalValidatorsRewards += ethers.parseEther('200') * BigInt(16) / BigInt(100 * time.duration.years(1));
+          assert.equal((await stakeManager.totalValidatorsRewards()).fixedReward, totalValidatorsRewards);
+
+          await stakeManager.connect(delegator1).depositAsDelegator(validator1, {value: ethers.parseEther('10')});
+          let start1 = await time.latest();
+          await stakeManager.setDelegatorsAPR(1400);
+          await stakeManager.connect(delegator1).depositAsDelegator(validator2, {value: ethers.parseEther('10')});
+          let start2 = await time.latest();
+          await stakeManager.connect(delegator2_1).depositAsDelegator(owner, {value: ethers.parseEther('10')});
+          let startOwner2_1 = await time.latest();
+
+          totalValidatorsRewards += ethers.parseEther('300') * BigInt(16 * 4) / BigInt(100 * time.duration.years(1));
+          assert.equal((await stakeManager.totalValidatorsRewards()).fixedReward, totalValidatorsRewards);
+
+          let delegatorInfo = await stakeManager.getDelegatorInfo(delegator1);
+          assert.equal(delegatorInfo.validatorsArr.length, 2);
+          assert.equal(delegatorInfo.delegatorPerValidatorArr.length, 2);
+
+          assert.equal(delegatorInfo.validatorsArr[0], validator1.address);
+          assert.equal(delegatorInfo.validatorsArr[1], validator2.address);
+
+          assert.equal(delegatorInfo.delegatorPerValidatorArr[0].amount, ethers.parseEther('10'));
+          assert.equal(delegatorInfo.delegatorPerValidatorArr[0].storedValidatorAcc, 0);
+          assert.equal(delegatorInfo.delegatorPerValidatorArr[0].calledForWithdraw, 0);
+          assert.equal(delegatorInfo.delegatorPerValidatorArr[0].lastClaim, start1);
+          assert.equal(delegatorInfo.delegatorPerValidatorArr[0].fixedReward.apr, 1300);
+          assert.equal(delegatorInfo.delegatorPerValidatorArr[0].fixedReward.lastUpdate, start1);
+          assert.equal(delegatorInfo.delegatorPerValidatorArr[0].fixedReward.fixedReward, 0);
+          assert.equal(delegatorInfo.delegatorPerValidatorArr[0].fixedReward.totalClaimed, 0);
+          assert.equal(delegatorInfo.delegatorPerValidatorArr[0].variableReward.variableReward, 0);
+          assert.equal(delegatorInfo.delegatorPerValidatorArr[0].variableReward.totalClaimed, 0);
+
+          assert.equal(delegatorInfo.delegatorPerValidatorArr[1].amount, ethers.parseEther('10'));
+          assert.equal(delegatorInfo.delegatorPerValidatorArr[1].storedValidatorAcc, 0);
+          assert.equal(delegatorInfo.delegatorPerValidatorArr[1].calledForWithdraw, 0);
+          assert.equal(delegatorInfo.delegatorPerValidatorArr[1].lastClaim, start2);
+          assert.equal(delegatorInfo.delegatorPerValidatorArr[1].fixedReward.apr, 1400);
+          assert.equal(delegatorInfo.delegatorPerValidatorArr[1].fixedReward.lastUpdate, start2);
+          assert.equal(delegatorInfo.delegatorPerValidatorArr[1].fixedReward.fixedReward, 0);
+          assert.equal(delegatorInfo.delegatorPerValidatorArr[1].fixedReward.totalClaimed, 0);
+          assert.equal(delegatorInfo.delegatorPerValidatorArr[1].variableReward.variableReward, 0);
+          assert.equal(delegatorInfo.delegatorPerValidatorArr[1].variableReward.totalClaimed, 0);
+
+          assert.equal(await stakeManager.totalValidatorsPool(), ethers.parseEther('300'));
+          assert.equal(await stakeManager.totalDelegatorsPool(), ethers.parseEther('30'));
+          assert.equal(await stakeManager.isDelegator(delegator1), true);
+          assert.equal(await stakeManager.isDelegator(delegator2_1), true);
+          assert.equal(await stakeManager.isDelegator(owner), false);
+          assert.equal(await stakeManager.isValidator(delegator1), false);
+          assert.equal(await stakeManager.isValidator(validator1), true);
+          assert.equal(await stakeManager.isValidator(validator2), true);
+          assert.equal(await stakeManager.isValidator(owner), true);
+
+          await time.increase(100);
+
+          let reward = ethers.parseEther('5');
+          await stakeManager.connect(distributor).distributeRewards([validator1, validator2, owner], [reward, reward, reward], {value: reward * BigInt(3)});
+
+          let currentTime = await time.latest();
+
+          assert.equal((await stakeManager.validatorEarned(validator1)).fixedReward, ethers.parseEther('100') * BigInt(currentTime - v1Start) * BigInt(15) / BigInt(100 * time.duration.years(1)));
+          assert.equal((await stakeManager.validatorEarned(validator1)).variableReward, reward - reward / BigInt(20));
+
+          assert.equal((await stakeManager.validatorEarned(validator2)).fixedReward, ethers.parseEther('100') * BigInt(currentTime - v2Start) * BigInt(16) / BigInt(100 * time.duration.years(1)));
+          assert.equal((await stakeManager.validatorEarned(validator2)).variableReward, reward);
+
+          assert.equal((await stakeManager.validatorEarned(owner)).fixedReward, ethers.parseEther('100') * BigInt(currentTime - ownerStart) * BigInt(16) / BigInt(100 * time.duration.years(1)));
+          assert.equal((await stakeManager.validatorEarned(owner)).variableReward, reward - reward / BigInt(100));
+
+          assert.equal((await stakeManager.delegatorEarnedPerValidator(delegator1, validator1)).fixedReward, ethers.parseEther('10') * BigInt(currentTime - start1) * BigInt(13) / BigInt(100 * time.duration.years(1)));
+          assert.equal((await stakeManager.delegatorEarnedPerValidator(delegator1, validator1)).variableReward, reward / BigInt(20));
+
+          assert.equal((await stakeManager.delegatorEarnedPerValidator(delegator1, validator2)).fixedReward, ethers.parseEther('10') * BigInt(currentTime - start2) * BigInt(14) / BigInt(100 * time.duration.years(1)));
+          assert.equal((await stakeManager.delegatorEarnedPerValidator(delegator1, validator2)).variableReward, 0);
+
+          assert.equal((await stakeManager.delegatorEarnedPerValidator(delegator1, owner)).fixedReward, 0);
+          assert.equal((await stakeManager.delegatorEarnedPerValidator(delegator1, owner)).variableReward, 0);
+
+          assert.equal((await stakeManager.delegatorEarnedPerValidator(delegator2_1, owner)).fixedReward, ethers.parseEther('10') * BigInt(currentTime - startOwner2_1) * BigInt(14) / BigInt(100 * time.duration.years(1)));
+          assert.equal((await stakeManager.delegatorEarnedPerValidator(delegator2_1, owner)).variableReward, reward / BigInt(100));
+
+          await expect(stakeManager.connect(delegator1).claimAsDelegatorPerValidator(owner)).to.be.revertedWith("CRATStakeManager: wrong validator");
+          await expect(stakeManager.connect(delegator1).restakeAsDelegator(owner)).to.be.revertedWith("CRATStakeManager: wrong validator");
+
+          await stakeManager.connect(validator2).validatorCallForWithdraw();
+          let v2CalledForWithdraw = await time.latest();
+          totalValidatorsRewards += ethers.parseEther('300') * BigInt(v2CalledForWithdraw - startOwner2_1) * BigInt(16) / BigInt(100 * time.duration.years(1)) + BigInt(1);
+          assert.equal((await stakeManager.totalValidatorsRewards()).fixedReward, totalValidatorsRewards);
+          assert.equal((await stakeManager.getValidatorInfo(validator2)).calledForWithdraw, v2CalledForWithdraw);
+
+          await time.increase(5);
+          assert.equal((await stakeManager.validatorEarned(validator2)).fixedReward, ethers.parseEther('100') * BigInt(16) * BigInt(v2CalledForWithdraw - v2Start) / BigInt(100 * time.duration.years(1)));
+          assert.equal((await stakeManager.delegatorEarnedPerValidator(delegator1, validator2)).fixedReward, ethers.parseEther('10') * BigInt(14) * BigInt(v2CalledForWithdraw - start2) / BigInt(100 * time.duration.years(1)));
+
+          assert.equal(await stakeManager.totalValidatorsPool(), ethers.parseEther('200'));
+          assert.equal(await stakeManager.totalDelegatorsPool(), ethers.parseEther('20'));
+
+          assert.equal(await stakeManager.stoppedValidatorsPool(), ethers.parseEther('100'));
+          assert.equal(await stakeManager.stoppedDelegatorsPool(), ethers.parseEther('10'));
+
+          await stakeManager.connect(delegator1).depositAsDelegator(owner, {value: ethers.parseEther('10')});
+          let startOwner1 = await time.latest();
+          delegatorInfo = await stakeManager.getDelegatorInfo(delegator1);
+
+          assert.equal(delegatorInfo.validatorsArr.length, 3);
+          assert.equal(delegatorInfo.validatorsArr[0], validator1.address);
+          assert.equal(delegatorInfo.validatorsArr[1], validator2.address);
+          assert.equal(delegatorInfo.validatorsArr[2], owner.address);
+
+          assert.equal(delegatorInfo.delegatorPerValidatorArr.length, 3);
+          assert.equal(delegatorInfo.delegatorPerValidatorArr[0].amount, ethers.parseEther('10'));
+          assert.equal(delegatorInfo.delegatorPerValidatorArr[0].storedValidatorAcc, 0);
+          assert.equal(delegatorInfo.delegatorPerValidatorArr[0].calledForWithdraw, 0);
+          assert.equal(delegatorInfo.delegatorPerValidatorArr[0].lastClaim, start1);
+          assert.equal(delegatorInfo.delegatorPerValidatorArr[0].fixedReward.apr, 1300);
+          assert.equal(delegatorInfo.delegatorPerValidatorArr[0].fixedReward.fixedReward, 0);
+          assert.equal(delegatorInfo.delegatorPerValidatorArr[0].fixedReward.lastUpdate, start1);
+          assert.equal(delegatorInfo.delegatorPerValidatorArr[0].fixedReward.totalClaimed, 0);
+          assert.equal(delegatorInfo.delegatorPerValidatorArr[0].variableReward.variableReward, 0);
+          assert.equal(delegatorInfo.delegatorPerValidatorArr[0].variableReward.totalClaimed, 0);
+
+          assert.equal(delegatorInfo.delegatorPerValidatorArr[1].amount, ethers.parseEther('10'));
+          assert.equal(delegatorInfo.delegatorPerValidatorArr[1].storedValidatorAcc, 0);
+          assert.equal(delegatorInfo.delegatorPerValidatorArr[1].calledForWithdraw, 0);
+          assert.equal(delegatorInfo.delegatorPerValidatorArr[1].lastClaim, start2);
+          assert.equal(delegatorInfo.delegatorPerValidatorArr[1].fixedReward.apr, 1400);
+          assert.equal(delegatorInfo.delegatorPerValidatorArr[1].fixedReward.fixedReward, 0);
+          assert.equal(delegatorInfo.delegatorPerValidatorArr[1].fixedReward.lastUpdate, start2);
+          assert.equal(delegatorInfo.delegatorPerValidatorArr[1].fixedReward.totalClaimed, 0);
+          assert.equal(delegatorInfo.delegatorPerValidatorArr[1].variableReward.variableReward, 0);
+          assert.equal(delegatorInfo.delegatorPerValidatorArr[1].variableReward.totalClaimed, 0);
+
+          assert.equal(delegatorInfo.delegatorPerValidatorArr[2].amount, ethers.parseEther('10'));
+          assert.equal(delegatorInfo.delegatorPerValidatorArr[2].storedValidatorAcc, reward / BigInt(100) * ethers.parseEther('1') / ethers.parseEther('10'));
+          assert.equal(delegatorInfo.delegatorPerValidatorArr[2].calledForWithdraw, 0);
+          assert.equal(delegatorInfo.delegatorPerValidatorArr[2].lastClaim, startOwner1);
+          assert.equal(delegatorInfo.delegatorPerValidatorArr[2].fixedReward.apr, 1400);
+          assert.equal(delegatorInfo.delegatorPerValidatorArr[2].fixedReward.fixedReward, 0);
+          assert.equal(delegatorInfo.delegatorPerValidatorArr[2].fixedReward.lastUpdate, startOwner1);
+          assert.equal(delegatorInfo.delegatorPerValidatorArr[2].fixedReward.totalClaimed, 0);
+          assert.equal(delegatorInfo.delegatorPerValidatorArr[2].variableReward.variableReward, 0);
+          assert.equal(delegatorInfo.delegatorPerValidatorArr[2].variableReward.totalClaimed, 0);
+
+          await stakeManager.setValidatorsAmountToSlash(0);
+
+          await stakeManager.connect(distributor).slash([validator1]);
+          currentTime = await time.latest();
+          let validator1Info = await stakeManager.getValidatorInfo(validator1);
+          assert.equal(validator1Info.amount, ethers.parseEther("100"));
+          assert.equal(validator1Info.commission, 500);
+          assert.equal(validator1Info.lastClaim, v1Start);
+          assert.equal(validator1Info.calledForWithdraw, 0);
+          assert.equal(validator1Info.vestingEnd, 0);
+          assert.equal(validator1Info.fixedReward.apr, 1600);
+          assert.equal(validator1Info.fixedReward.lastUpdate, currentTime);
+          assert.equal(validator1Info.fixedReward.fixedReward, ethers.parseEther("100") * BigInt(currentTime - v1Start) * BigInt(15) / BigInt(100 * time.duration.years(1)));
+          assert.equal(validator1Info.fixedReward.totalClaimed, 0);
+          assert.equal(validator1Info.variableReward.variableReward, reward - reward / BigInt(20));
+          assert.equal(validator1Info.variableReward.totalClaimed, 0);
+          assert.equal(validator1Info.delegatedAmount, 0);
+          assert.equal(validator1Info.stoppedDelegatedAmount, ethers.parseEther('10') * BigInt(95) / BigInt(100));
+          assert.equal(validator1Info.delegatorsAcc, reward / BigInt(20) * ethers.parseEther('1') / ethers.parseEther('10'));
+          assert.equal(validator1Info.delegators.length, 1);
+          assert.equal(validator1Info.delegators[0], delegator1.address);
+
+          delegatorInfo = await stakeManager.getDelegatorInfo(delegator1);
+          assert.equal(delegatorInfo.delegatorPerValidatorArr[0].amount, ethers.parseEther('10') * BigInt(95) / BigInt(100));
+          assert.equal(delegatorInfo.delegatorPerValidatorArr[0].storedValidatorAcc, reward / BigInt(20) * ethers.parseEther('1') / ethers.parseEther('10'));
+          assert.equal(delegatorInfo.delegatorPerValidatorArr[0].calledForWithdraw, currentTime);
+          assert.equal(delegatorInfo.delegatorPerValidatorArr[0].lastClaim, start1);
+          assert.equal(delegatorInfo.delegatorPerValidatorArr[0].fixedReward.apr, 1400);
+          assert.equal(delegatorInfo.delegatorPerValidatorArr[0].fixedReward.fixedReward, ethers.parseEther('10') * BigInt(currentTime - start1) * BigInt(13) / BigInt(100 * time.duration.years(1)));
+          assert.equal(delegatorInfo.delegatorPerValidatorArr[0].fixedReward.lastUpdate, currentTime);
+          assert.equal(delegatorInfo.delegatorPerValidatorArr[0].fixedReward.totalClaimed, 0);
+          assert.equal(delegatorInfo.delegatorPerValidatorArr[0].variableReward.variableReward, reward / BigInt(20));
+          assert.equal(delegatorInfo.delegatorPerValidatorArr[0].variableReward.totalClaimed, 0);
+
+          assert.equal(await stakeManager.totalDelegatorsPool(), ethers.parseEther('20'));
+          assert.equal(await stakeManager.stoppedDelegatorsPool(), ethers.parseEther('10') + ethers.parseEther('10') * BigInt(95) / BigInt(100));
+
+          assert.equal((await stakeManager.totalValidatorsRewards()).variableReward, reward * BigInt(3) - reward / BigInt(20) - reward / BigInt(100));
+          totalValidatorsRewards += ethers.parseEther('200') * BigInt(16) * BigInt(currentTime - v2CalledForWithdraw) / BigInt(100 * time.duration.years(1));
+          assert.equal((await stakeManager.totalValidatorsRewards()).fixedReward, totalValidatorsRewards);
+
+          assert.equal((await stakeManager.totalDelegatorsRewards()).variableReward, reward / BigInt(20) + reward / BigInt(100));
+          assert.equal((await stakeManager.totalDelegatorsRewards()).fixedReward, 
+            ethers.parseEther('10') * BigInt(13) / BigInt(100*time.duration.years(1)) + 
+            ethers.parseEther('10') * BigInt(14) / BigInt(100*time.duration.years(1)) + 
+            ethers.parseEther('20') * BigInt(14) / BigInt(100*time.duration.years(1)) + 
+            ethers.parseEther('30') * BigInt(14) * BigInt(v2CalledForWithdraw - startOwner2_1) / BigInt(100*time.duration.years(1)) + 
+            ethers.parseEther('20') * BigInt(14) * BigInt(startOwner1 - v2CalledForWithdraw) / BigInt(100*time.duration.years(1)) + 
+            ethers.parseEther('30') * BigInt(14) * BigInt(currentTime - startOwner1) / BigInt(100*time.duration.years(1))
+          );
+
+          await time.increase(time.duration.days(30));
+
+          let fixedReward = ethers.parseEther('10') * BigInt(14) * BigInt(v2CalledForWithdraw - start2) / BigInt(100 * time.duration.years(1));
+          await owner.sendTransaction({to: stakeManager.target, value: fixedReward});
+          await expect(stakeManager.connect(delegator1).claimAsDelegatorPerValidator(validator2)).to.changeEtherBalances([stakeManager, delegator1], [-fixedReward, fixedReward]);
+          
+          await expect(stakeManager.connect(delegator1).claimAsDelegatorPerValidator(validator2)).to.changeEtherBalances([stakeManager, delegator1], [0,0]);
+          await expect(stakeManager.connect(delegator1).restakeAsDelegator(validator2)).to.be.revertedWith("CRATStakeManager: nothing to restake");
+
+          // check removing validators from delegator info
+          fixedReward = ethers.parseEther('100') * BigInt(16) * BigInt(v2CalledForWithdraw - v2Start) / BigInt(100 * time.duration.years(1));
+          await owner.sendTransaction({to: stakeManager.target, value: fixedReward});
+          await expect(stakeManager.connect(validator2).withdrawAsValidator()).to.changeEtherBalances([stakeManager, validator2, delegator1], [-(fixedReward + ethers.parseEther('100') + reward + ethers.parseEther('10')), ethers.parseEther('100') + fixedReward + reward, ethers.parseEther('10')]);
+
+          delegatorInfo = await stakeManager.getDelegatorInfo(delegator1);
+          assert.equal(delegatorInfo.validatorsArr.length, 2);
+          assert.equal(delegatorInfo.validatorsArr[0], validator1.address);
+          assert.equal(delegatorInfo.validatorsArr[1], owner.address);
+          assert.equal(delegatorInfo.delegatorPerValidatorArr.length, 2);
+
+          assert.equal(delegatorInfo.delegatorPerValidatorArr[0].amount, ethers.parseEther('10') * BigInt(95) / BigInt(100));
+          assert.equal(delegatorInfo.delegatorPerValidatorArr[0].storedValidatorAcc, reward / BigInt(20) * ethers.parseEther('1') / ethers.parseEther('10'));
+          assert.equal(delegatorInfo.delegatorPerValidatorArr[0].calledForWithdraw, currentTime);
+          assert.equal(delegatorInfo.delegatorPerValidatorArr[0].lastClaim, start1);
+          assert.equal(delegatorInfo.delegatorPerValidatorArr[0].fixedReward.apr, 1400);
+          assert.equal(delegatorInfo.delegatorPerValidatorArr[0].fixedReward.fixedReward, ethers.parseEther('10') * BigInt(currentTime - start1) * BigInt(13) / BigInt(100 * time.duration.years(1)));
+          assert.equal(delegatorInfo.delegatorPerValidatorArr[0].fixedReward.lastUpdate, currentTime);
+          assert.equal(delegatorInfo.delegatorPerValidatorArr[0].fixedReward.totalClaimed, 0);
+          assert.equal(delegatorInfo.delegatorPerValidatorArr[0].variableReward.variableReward, reward / BigInt(20));
+          assert.equal(delegatorInfo.delegatorPerValidatorArr[0].variableReward.totalClaimed, 0);
+
+          assert.equal(delegatorInfo.delegatorPerValidatorArr[1].amount, ethers.parseEther('10'));
+          assert.equal(delegatorInfo.delegatorPerValidatorArr[1].storedValidatorAcc, reward / BigInt(100) * ethers.parseEther('1') / ethers.parseEther('10'));
+          assert.equal(delegatorInfo.delegatorPerValidatorArr[1].calledForWithdraw, 0);
+          assert.equal(delegatorInfo.delegatorPerValidatorArr[1].lastClaim, startOwner1);
+          assert.equal(delegatorInfo.delegatorPerValidatorArr[1].fixedReward.apr, 1400);
+          assert.equal(delegatorInfo.delegatorPerValidatorArr[1].fixedReward.fixedReward, 0);
+          assert.equal(delegatorInfo.delegatorPerValidatorArr[1].fixedReward.lastUpdate, startOwner1);
+          assert.equal(delegatorInfo.delegatorPerValidatorArr[1].fixedReward.totalClaimed, 0);
+          assert.equal(delegatorInfo.delegatorPerValidatorArr[1].variableReward.variableReward, 0);
+          assert.equal(delegatorInfo.delegatorPerValidatorArr[1].variableReward.totalClaimed, 0);
+
+          fixedReward = delegatorInfo.delegatorPerValidatorArr[0].fixedReward.fixedReward;
+          await owner.sendTransaction({to: stakeManager.target, value: fixedReward});
+          await expect(stakeManager.connect(delegator1).withdrawAsDelegator(validator1)).to.changeEtherBalances([stakeManager, delegator1], [-(ethers.parseEther('10') * BigInt(95) / BigInt(100) + fixedReward + reward / BigInt(20)), ethers.parseEther('10') * BigInt(95) / BigInt(100) + fixedReward + reward / BigInt(20)])
+
+          delegatorInfo = await stakeManager.getDelegatorInfo(delegator1);
+          assert.equal(delegatorInfo.validatorsArr.length, 1);
+          assert.equal(delegatorInfo.validatorsArr[0], owner.address);
+          assert.equal(delegatorInfo.delegatorPerValidatorArr.length, 1);
+          assert.equal(delegatorInfo.delegatorPerValidatorArr[0].amount, ethers.parseEther('10'));
+          assert.equal(delegatorInfo.delegatorPerValidatorArr[0].storedValidatorAcc, reward / BigInt(100) * ethers.parseEther('1') / ethers.parseEther('10'));
+          assert.equal(delegatorInfo.delegatorPerValidatorArr[0].calledForWithdraw, 0);
+          assert.equal(delegatorInfo.delegatorPerValidatorArr[0].lastClaim, startOwner1);
+          assert.equal(delegatorInfo.delegatorPerValidatorArr[0].fixedReward.apr, 1400);
+          assert.equal(delegatorInfo.delegatorPerValidatorArr[0].fixedReward.fixedReward, 0);
+          assert.equal(delegatorInfo.delegatorPerValidatorArr[0].fixedReward.lastUpdate, startOwner1);
+          assert.equal(delegatorInfo.delegatorPerValidatorArr[0].fixedReward.totalClaimed, 0);
+          assert.equal(delegatorInfo.delegatorPerValidatorArr[0].variableReward.variableReward, 0);
+          assert.equal(delegatorInfo.delegatorPerValidatorArr[0].variableReward.totalClaimed, 0);
         })
     })
 });
