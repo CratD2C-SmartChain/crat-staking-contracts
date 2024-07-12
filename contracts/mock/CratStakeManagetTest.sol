@@ -986,6 +986,7 @@ contract CRATStakeManagerTest is
 
     /** @notice view-method to get all delegators per certain validator infos
      * @param validator address
+     * @return delegators addresses
      * @return delegatorPerValidatorArr the list of info for all delegators per certain validator
      */
     function getDelegatorsInfoPerValidator(
@@ -993,11 +994,12 @@ contract CRATStakeManagerTest is
     )
         external
         view
-        returns (DelegatorPerValidatorInfo[] memory delegatorPerValidatorArr)
+        returns (
+            address[] memory delegators,
+            DelegatorPerValidatorInfo[] memory delegatorPerValidatorArr
+        )
     {
-        address[] memory delegators = _validatorInfo[validator]
-            .delegators
-            .values();
+        delegators = _validatorInfo[validator].delegators.values();
         uint256 len = delegators.length;
         delegatorPerValidatorArr = new DelegatorPerValidatorInfo[](len);
         for (uint256 i; i < len; i++) {
