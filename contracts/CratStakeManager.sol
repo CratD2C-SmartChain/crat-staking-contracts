@@ -948,7 +948,7 @@ contract CRATStakeManager is
         delegators = _validatorInfo[validator].delegators.values();
     }
 
-    /** view-method to get delegator info
+    /** @notice view-method to get delegator info
      * @param delegator address
      * @return validatorsArr the list of validators
      * @return delegatorPerValidatorArr the list of info for all validators
@@ -974,7 +974,29 @@ contract CRATStakeManager is
         }
     }
 
-    /** view-method to approximately calculate total distributed rewards for validators
+    /** @notice view-method to get all delegators per certain validator infos
+     * @param validator address
+     * @return delegatorPerValidatorArr the list of info for all delegators per certain validator
+     */
+    function getDelegatorsInfoPerValidator(
+        address validator
+    )
+        external
+        view
+        returns (DelegatorPerValidatorInfo[] memory delegatorPerValidatorArr)
+    {
+        address[] memory delegators = _validatorInfo[validator]
+            .delegators
+            .values();
+        uint256 len = delegators.length;
+        delegatorPerValidatorArr = new DelegatorPerValidatorInfo[](len);
+        for (uint256 i; i < len; i++) {
+            delegatorPerValidatorArr[i] = _delegatorInfo[delegators[i]]
+                .delegatorPerValidator[validator];
+        }
+    }
+
+    /** @notice view-method to approximately calculate total distributed rewards for validators
      * @return fixedReward total distributed
      * @return variableReward total distributed
      */
