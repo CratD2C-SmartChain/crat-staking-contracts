@@ -30,8 +30,9 @@ module.exports = {
     //   accounts: [PRIVATE_KEY]
     // }
     cratTestnet: {
-      url: "http://162.55.102.39:8545/",
-      chainId: 35711,
+      url: "https://cratd2c-testnet-node1.cratd2csmartchain.io/",
+      chainId: 65349,
+      gasPrice: 25000000000,
       accounts: [PRIVATE_KEY]
     }
   },

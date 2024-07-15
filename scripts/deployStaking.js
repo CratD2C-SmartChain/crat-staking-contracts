@@ -13,7 +13,6 @@ async function main() {
 
   const proxyAdmin = await ProxyAdmin.deploy(DISTRIBUTOR, {gasLimit: 8000000});
   console.log("Proxy admin deployed ", proxyAdmin.target);
-  // const proxyAdmin = ProxyAdmin.attach("");
 
   const impl = await CratStakeManager.deploy({gasLimit: 8000000});
   console.log("Implementation deployed ", impl.target);

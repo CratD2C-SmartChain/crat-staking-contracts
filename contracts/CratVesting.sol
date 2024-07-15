@@ -9,6 +9,8 @@ contract CRATVesting is AccessControl, ReentrancyGuard {
     uint256 public constant PRECISION = 10 ** 26;
     uint256 public constant TOTAL_SUPPLY = 300_000_000 * 10 ** 18;
 
+    address public initializer;
+
     uint16 private _startYear;
     uint16 private _endYear;
 
@@ -24,8 +26,13 @@ contract CRATVesting is AccessControl, ReentrancyGuard {
     event DistributionStarted(address[10] allocators);
     event Claimed(address allocator, uint256 amount);
 
-    constructor(address _admin) {
-        require(_admin != address(0), "CRATVesting: 0x00");
+    constructor(address _admin, address _initializer) {
+        require(
+            _admin != address(0) && _initializer != address(0),
+            "CRATVesting: 0x00"
+        );
+
+        initializer = _initializer;
         _grantRole(DEFAULT_ADMIN_ROLE, _admin);
     }
 
@@ -37,7 +44,10 @@ contract CRATVesting is AccessControl, ReentrancyGuard {
      */
     function startDistribution(
         address[10] memory allocators
-    ) external payable onlyRole(DEFAULT_ADMIN_ROLE) {
+    ) external payable {
+        require(initializer == _msgSender(), "CRATVesting: wrong sender");
+        delete initializer;
+        
         require(msg.value == TOTAL_SUPPLY, "CRATVesting: wrong vesting supply");
         _startYear = 2024;
         _endYear = 2038;

@@ -9,6 +9,8 @@ contract CRATVestingTest is AccessControl, ReentrancyGuard {
     uint256 public constant PRECISION = 10 ** 26;
     uint256 public constant TOTAL_SUPPLY = 300_000_000 * 10 ** 18;
 
+    address public initializer;
+
     uint256 public testTime;
 
     uint16 private _startYear;
@@ -23,23 +25,36 @@ contract CRATVestingTest is AccessControl, ReentrancyGuard {
         uint256[8] shedule;
     }
 
-    constructor(address _admin) {
-        require(_admin != address(0), "CRATVesting: 0x00");
-        _grantRole(DEFAULT_ADMIN_ROLE, _admin);
+    event DistributionStarted(address[10] allocators);
+    event Claimed(address allocator, uint256 amount);
 
-        testTime = block.timestamp;
+    constructor(address _admin, address _initializer) {
+        require(
+            _admin != address(0) && _initializer != address(0),
+            "CRATVesting: 0x00"
+        );
+
+        initializer = _initializer;
+        _grantRole(DEFAULT_ADMIN_ROLE, _admin);
     }
 
-    function chnageTestTime(uint256 value) external {
-        require(testTime < value);
+    function changeTestTime(uint256 value) external {
+        require(value > testTime);
         testTime = value;
     }
 
     // admin methods
 
+    /** @notice initial allocators set-up
+     * @param allocators an array of receiver addresses of the allocation
+     * @dev only admin
+     */
     function startDistribution(
         address[10] memory allocators
-    ) external payable onlyRole(DEFAULT_ADMIN_ROLE) {
+    ) external payable {
+        require(initializer == _msgSender(), "CRATVesting: wrong sender");
+        delete initializer;
+        
         require(msg.value == TOTAL_SUPPLY, "CRATVesting: wrong vesting supply");
         _startYear = 2024;
         _endYear = 2038;
@@ -151,8 +166,15 @@ contract CRATVestingTest is AccessControl, ReentrancyGuard {
             1_410000000000000000000000,
             3_066600000000000000000000
         ];
+
+        emit DistributionStarted(allocators);
     }
 
+    /** @notice partially claim available tokens
+     * @param to receiver addresses of the allocation
+     * @param amount token amount
+     * @dev only admin
+     */
     function claim(
         address to,
         uint256 amount
@@ -165,6 +187,10 @@ contract CRATVestingTest is AccessControl, ReentrancyGuard {
         _claim(to, amount);
     }
 
+    /** @notice claim all available tokens
+     * @param to receiver addresses of the allocation
+     * @dev only admin
+     */
     function claimAll(
         address to
     ) external onlyRole(DEFAULT_ADMIN_ROLE) nonReentrant {
@@ -175,6 +201,10 @@ contract CRATVestingTest is AccessControl, ReentrancyGuard {
 
     // view methods
 
+    /** @notice view-method to get amount of available tokens for user
+     * @param user address
+     * @return unlocked token amount
+     */
     function pending(address user) public view returns (uint256 unlocked) {
         if (_startYear == 0 || !_addressToInfo[user].hasShedule) return 0;
 
@@ -191,6 +221,12 @@ contract CRATVestingTest is AccessControl, ReentrancyGuard {
             _addressToInfo[user].claimed;
     }
 
+    /** @notice view-method to get user's shedule
+     * @param account address
+     * @return hasShedule true - has shedule, else - false
+     * @return claimed already claimed token amount
+     * @return shedule an array of percents
+     */
     function getAddressInfo(
         address account
     )
@@ -205,6 +241,8 @@ contract CRATVestingTest is AccessControl, ReentrancyGuard {
         );
     }
 
+    /** @notice view-method to get an array of allocation receivers' addresses
+     */
     function getAllocationAddresses()
         external
         view
@@ -218,6 +256,8 @@ contract CRATVestingTest is AccessControl, ReentrancyGuard {
     function _claim(address to, uint256 amount) internal {
         _addressToInfo[to].claimed += amount;
         _safeTransferETH(to, amount);
+
+        emit Claimed(to, amount);
     }
 
     function _safeTransferETH(address _to, uint256 _value) internal {

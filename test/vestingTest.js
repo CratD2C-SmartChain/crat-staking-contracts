@@ -12,7 +12,7 @@ describe("CRATVesting", function () {
     async function deployFixture() {
         const [owner, earlyAdoptors, royalties, ico, CTVG, ieo, team, liquidity, airdrop, manualDistribution] = await ethers.getSigners();
 
-        const vesting = await ethers.deployContract("CRATVesting", [owner]);
+        const vesting = await ethers.deployContract("CRATVesting", [owner, owner]);
     
         const CRATStakeManager = await ethers.getContractFactory("CRATStakeManager");
         const stakeManager = await upgrades.deployProxy(CRATStakeManager, [owner.address, owner.address]);
@@ -27,6 +27,7 @@ describe("CRATVesting", function () {
             const {owner, vesting} = await loadFixture(deployFixture);
 
             assert.equal(await vesting.hasRole(await vesting.DEFAULT_ADMIN_ROLE(), owner), true);
+            assert.equal(await vesting.initializer(), owner.address);
             let accounts = await vesting.getAllocationAddresses();
             let info = await vesting.getAddressInfo(owner);
             assert.equal(accounts.length, 10);
@@ -59,7 +60,7 @@ describe("CRATVesting", function () {
                 ZERO_ADDRESS,
                 ZERO_ADDRESS,
                 ZERO_ADDRESS
-            ])).to.be.revertedWithCustomError(vesting, "AccessControlUnauthorizedAccount");
+            ])).to.be.revertedWith("CRATVesting: wrong sender");
             await expect(vesting.connect(ico).claim(ZERO_ADDRESS, 0)).to.be.revertedWithCustomError(vesting, "AccessControlUnauthorizedAccount");
             await expect(vesting.connect(ico).claimAll(ZERO_ADDRESS)).to.be.revertedWithCustomError(vesting, "AccessControlUnauthorizedAccount");
 
@@ -109,6 +110,20 @@ describe("CRATVesting", function () {
                 airdrop,
                 manualDistribution
             ], {value: ethers.parseEther('300000000')});
+
+            assert.equal(await vesting.initializer(), ZERO_ADDRESS);
+            await expect(vesting.connect(owner).startDistribution([
+                earlyAdoptors,
+                royalties,
+                ico,
+                CTVG,
+                ieo,
+                team,
+                stakeManager,
+                liquidity,
+                airdrop,
+                manualDistribution
+            ])).to.be.revertedWith("CRATVesting: wrong sender");
 
             assert.equal(await ethers.provider.getBalance(vesting), await vesting.TOTAL_SUPPLY());
 
@@ -652,7 +667,7 @@ describe("CRATVesting", function () {
         })
 
         it("Other branches", async ()=> {
-            await expect(ethers.deployContract("CRATVesting", [ZERO_ADDRESS])).to.be.revertedWith("CRATVesting: 0x00");
+            await expect(ethers.deployContract("CRATVesting", [ZERO_ADDRESS, ZERO_ADDRESS])).to.be.revertedWith("CRATVesting: 0x00");
         })
     })
 })
