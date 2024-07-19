@@ -34,6 +34,8 @@ contract CRATVestingTest is AccessControl, ReentrancyGuard {
             "CRATVesting: 0x00"
         );
 
+        testTime = block.timestamp;
+
         initializer = _initializer;
         _grantRole(DEFAULT_ADMIN_ROLE, _admin);
     }

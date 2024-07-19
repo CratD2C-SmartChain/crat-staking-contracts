@@ -11,3 +11,5 @@ artifacts
 
 .openzeppelin
 package-lock.json
+
+scripts/get-info.js

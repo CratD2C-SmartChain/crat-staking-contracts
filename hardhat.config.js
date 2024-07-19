@@ -20,15 +20,42 @@ module.exports = {
           },
         },
       }
-    ]
+    ],
+    overrides: {
+      "contracts/CRATStakeManager.sol": {
+        version: "0.8.24",
+        settings: {
+          viaIR: true,
+          optimizer: {
+            enabled: true,
+            runs: 99,
+          },
+        }
+      },
+      "contracts/mock/CRATStakeManagerTest.sol": {
+        version: "0.8.24",
+        settings: {
+          viaIR: true,
+          optimizer: {
+            enabled: true,
+            runs: 99,
+            // details: {
+            //   yul: true
+            // }
+          },
+        }
+      },
+    }
   },
   networks: {
-    // hardhat: {}
-    // cratTestnet: {
-    //   url: "http://142.132.143.240:8545/",
-    //   chainId: 22618,
-    //   accounts: [PRIVATE_KEY]
-    // }
+    // hardhat: {
+    //   // allowUnlimitedContractSize: true,
+    //   forking: {
+    //     url: "https://cratd2c-testnet-node1.cratd2csmartchain.io/",
+    //     chainId: 65349,
+    //     blockNumber: 298148
+    //   }
+    // },
     cratTestnet: {
       url: "https://cratd2c-testnet-node1.cratd2csmartchain.io/",
       chainId: 65349,

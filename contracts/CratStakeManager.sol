@@ -61,10 +61,28 @@ contract CRATStakeManager is
         uint256 vestingEnd;
         FixedReward fixedReward;
         VariableReward variableReward;
+        SlashPenaltyCalculation penalty;
         uint256 delegatedAmount;
         uint256 stoppedDelegatedAmount;
         uint256 delegatorsAcc;
         EnumerableSet.AddressSet delegators;
+    }
+
+    struct ValidatorInfoView {
+        uint256 amount;
+        uint256 commission;
+        uint256 lastClaim;
+        uint256 calledForWithdraw;
+        uint256 vestingEnd;
+        FixedReward fixedReward;
+        VariableReward variableReward;
+        SlashPenaltyCalculation penalty;
+        uint256 delegatedAmount;
+        uint256 stoppedDelegatedAmount;
+        uint256 delegatorsAcc;
+        address[] delegators;
+        uint256 withdrawAvailable;
+        uint256 claimAvailable;
     }
 
     struct DelegatorInfo {
@@ -112,6 +130,11 @@ contract CRATStakeManager is
         uint256 variableReward;
         uint256 fixedLastUpdate;
         uint256 fixedReward;
+    }
+
+    struct SlashPenaltyCalculation {
+        uint256 lastSlash;
+        uint256 potentialPenalty;
     }
 
     event ValidatorDeposited(
@@ -378,18 +401,23 @@ contract CRATStakeManager is
         uint256 len = validators.length;
         uint256 delegatorsPerc = settings.delegatorsSettings.toSlash;
         uint256 fee;
-        bool stopDelegators;
         address[] memory delegators;
         uint256 total;
         for (uint256 i; i < len; i++) {
             if (isValidator(validators[i])) {
                 _updateValidatorReward(validators[i]);
 
-                fee = _validatorInfo[validators[i]].amount >
-                    settings.validatorsSettings.toSlash
-                    ? settings.validatorsSettings.toSlash
+                fee =
+                    _validatorInfo[validators[i]].penalty.potentialPenalty +
+                    settings.validatorsSettings.toSlash;
+                fee = _validatorInfo[validators[i]].amount > fee
+                    ? fee
                     : _validatorInfo[validators[i]].amount;
+
                 _validatorInfo[validators[i]].amount -= fee;
+                delete _validatorInfo[validators[i]].penalty.potentialPenalty;
+                _validatorInfo[validators[i]].penalty.lastSlash = block
+                    .timestamp;
                 total += fee;
                 delegators = _validatorInfo[validators[i]].delegators.values();
                 if (_validatorInfo[validators[i]].calledForWithdraw > 0) {
@@ -446,8 +474,6 @@ contract CRATStakeManager is
                             .stoppedDelegatedAmount -= fee;
                         stoppedDelegatorsPool -= fee;
                         total += fee;
-
-                        stopDelegators = true;
                     }
                 }
 
@@ -472,15 +498,13 @@ contract CRATStakeManager is
                         _delegatorInfo[delegators[j]]
                             .delegatorPerValidator[validators[i]]
                             .calledForWithdraw ==
-                        0 &&
-                        stopDelegators
+                        0
                     ) {
                         _delegatorCallForWithdraw(delegators[j], validators[i]);
                     }
                 }
 
                 delete fee;
-                delete stopDelegators;
                 delete delegators;
             }
         }
@@ -789,11 +813,7 @@ contract CRATStakeManager is
     ) public view returns (uint256 fixedReward, uint256 variableReward) {
         fixedReward =
             _validatorInfo[validator].fixedReward.fixedReward +
-            ((_rightBoarderV(validator) -
-                _validatorInfo[validator].fixedReward.lastUpdate) *
-                _validatorInfo[validator].amount *
-                _validatorInfo[validator].fixedReward.apr) /
-            (YEAR_DURATION * PRECISION);
+            _fixedRewardToAdd(validator);
         variableReward = _validatorInfo[validator]
             .variableReward
             .variableReward;
@@ -903,55 +923,46 @@ contract CRATStakeManager is
 
     /** @notice view-method to get validator info
      * @param validator address
-     * @return amount of validator's deposit
-     * @return commission percent that validator gives to its delegators
-     * @return lastClaim previous claim timestamp
-     * @return calledForWithdraw timestamp of #callForWithdrawAsValidator transaction (0 - if validator is active)
-     * @return vestingEnd timestamp of the vesting funds process end
-     * @return fixedReward struct with [apr - APR percent, lastUpdate - timestamp of last reward calculation, fixedReward - already calculated fixed reward] fields
-     * @return variableReward calculated variable reward amount
-     * @return delegatedAmount sum of active delegators deposits
-     * @return stoppedDelegatedAmount sum of stopped delegators deposits
-     * @return delegatorsAcc variable reward accumulator value for delegators
-     * @return delegators an array of delegators' addresses list (even if someone is stopped)
+     * @return info validator info:
+     * amount of validator's deposit
+     * commission percent that validator gives to its delegators
+     * lastClaim previous claim timestamp
+     * calledForWithdraw timestamp of #callForWithdrawAsValidator transaction (0 - if validator is active)
+     * vestingEnd timestamp of the vesting funds process end
+     * fixedReward struct with [apr - APR percent, lastUpdate - timestamp of last reward calculation, fixedReward - already calculated fixed reward] fields
+     * variableReward calculated variable reward amount
+     * penalty info for potential additional slashing penalty calculation
+     * delegatedAmount sum of active delegators deposits
+     * stoppedDelegatedAmount sum of stopped delegators deposits
+     * delegatorsAcc variable reward accumulator value for delegators
+     * delegators an array of delegators' addresses list (even if someone is stopped)
+     * withdrawAvailable timestamp since validator is able to withdraw
+     * claimAvailable timestamp since validator is able to claim
      */
-    function getValidatorInfo(
-        address validator
-    )
-        external
-        view
-        returns (
-            uint256 amount,
-            uint256 commission,
-            uint256 lastClaim,
-            uint256 calledForWithdraw,
-            uint256 vestingEnd,
-            FixedReward memory fixedReward,
-            VariableReward memory variableReward,
-            uint256 delegatedAmount,
-            uint256 stoppedDelegatedAmount,
-            uint256 delegatorsAcc,
-            address[] memory delegators
-        )
-    {
-        amount = _validatorInfo[validator].amount;
-        commission = _validatorInfo[validator].commission;
-        lastClaim = _validatorInfo[validator].lastClaim;
-        calledForWithdraw = _validatorInfo[validator].calledForWithdraw;
-        vestingEnd = _validatorInfo[validator].vestingEnd;
-        fixedReward = _validatorInfo[validator].fixedReward;
-        variableReward = _validatorInfo[validator].variableReward;
-        delegatedAmount = _validatorInfo[validator].delegatedAmount;
-        stoppedDelegatedAmount = _validatorInfo[validator]
+    function getValidatorInfo(address validator) external view returns(ValidatorInfoView memory info) {
+        info.amount = _validatorInfo[validator].amount;
+        info.commission = _validatorInfo[validator].commission;
+        info.lastClaim = _validatorInfo[validator].lastClaim;
+        info.calledForWithdraw = _validatorInfo[validator].calledForWithdraw;
+        info.vestingEnd = _validatorInfo[validator].vestingEnd;
+        info.fixedReward = _validatorInfo[validator].fixedReward;
+        info.variableReward = _validatorInfo[validator].variableReward;
+        info.penalty = _validatorInfo[validator].penalty;
+        info.delegatedAmount = _validatorInfo[validator].delegatedAmount;
+        info.stoppedDelegatedAmount = _validatorInfo[validator]
             .stoppedDelegatedAmount;
-        delegatorsAcc = _validatorInfo[validator].delegatorsAcc;
-        delegators = _validatorInfo[validator].delegators.values();
+        info.delegatorsAcc = _validatorInfo[validator].delegatorsAcc;
+        info.delegators = _validatorInfo[validator].delegators.values();
+        info.withdrawAvailable = (info.calledForWithdraw > 0) ? info.calledForWithdraw + settings.validatorsSettings.withdrawCooldown : 0;
+        info.claimAvailable = info.lastClaim + settings.validatorsSettings.claimCooldown;
     }
 
     /** @notice view-method to get delegator info
      * @param delegator address
      * @return validatorsArr the list of validators
      * @return delegatorPerValidatorArr the list of info for all validators
+     * @return withdrawAvailable timestamp since delegator is able to withdraw
+     * @return claimAvailable timestamp since delegator is able to claim
      */
     function getDelegatorInfo(
         address delegator
@@ -960,17 +971,33 @@ contract CRATStakeManager is
         view
         returns (
             address[] memory validatorsArr,
-            DelegatorPerValidatorInfo[] memory delegatorPerValidatorArr
+            DelegatorPerValidatorInfo[] memory delegatorPerValidatorArr,
+            uint256[] memory withdrawAvailable,
+            uint256[] memory claimAvailable
         )
     {
         validatorsArr = _delegatorInfo[delegator].validators.values();
         uint256 len = validatorsArr.length;
 
         delegatorPerValidatorArr = new DelegatorPerValidatorInfo[](len);
+        withdrawAvailable = new uint256[](len);
+        claimAvailable = new uint256[](len);
 
         for (uint256 i; i < len; i++) {
             delegatorPerValidatorArr[i] = _delegatorInfo[delegator]
                 .delegatorPerValidator[validatorsArr[i]];
+
+            withdrawAvailable[i] = _getDelegatorCallForWithdraw(
+                delegator,
+                validatorsArr[i]
+            );
+            if (withdrawAvailable[i] > 0)
+                withdrawAvailable[i] += settings
+                    .delegatorsSettings
+                    .withdrawCooldown;
+            claimAvailable[i] =
+                delegatorPerValidatorArr[i].lastClaim +
+                settings.delegatorsSettings.claimCooldown;
         }
     }
 
@@ -1088,6 +1115,13 @@ contract CRATStakeManager is
 
     function _updateValidatorReward(address validator) internal {
         _updateFixedValidatorsReward();
+
+        // calculate potential penatly
+        if (_validatorInfo[validator].penalty.lastSlash > 0) {
+            _validatorInfo[validator]
+                .penalty
+                .potentialPenalty += _fixedRewardToAdd(validator);
+        }
 
         // store fixed reward
         (_validatorInfo[validator].fixedReward.fixedReward, ) = validatorEarned(
@@ -1328,6 +1362,7 @@ contract CRATStakeManager is
                 .delegatorPerValidator[validator]
                 .amount;
             _delegatorInfo[delegators[i]].validators.remove(validator);
+            _validatorInfo[validator].delegators.remove(delegators[i]);
             delete _delegatorInfo[delegators[i]].delegatorPerValidator[
                 validator
             ];
@@ -1353,31 +1388,14 @@ contract CRATStakeManager is
         address delegator,
         address validator
     ) internal {
-        uint256 calledForWithdraw;
-        if (
-            _delegatorInfo[delegator]
-                .delegatorPerValidator[validator]
-                .calledForWithdraw >
-            0 &&
-            _validatorInfo[validator].calledForWithdraw > 0
-        ) {
-            calledForWithdraw = Math.min(
-                _delegatorInfo[delegator]
-                    .delegatorPerValidator[validator]
-                    .calledForWithdraw,
-                _validatorInfo[validator].calledForWithdraw
-            );
-        } else if (
-            _delegatorInfo[delegator]
-                .delegatorPerValidator[validator]
-                .calledForWithdraw > 0
-        ) {
-            calledForWithdraw = _delegatorInfo[delegator]
-                .delegatorPerValidator[validator]
-                .calledForWithdraw;
-        } else if (_validatorInfo[validator].calledForWithdraw > 0) {
-            calledForWithdraw = _validatorInfo[validator].calledForWithdraw;
-        } else revert("CRATStakeManager: no call for withdraw");
+        uint256 calledForWithdraw = _getDelegatorCallForWithdraw(
+            delegator,
+            validator
+        );
+        require(
+            calledForWithdraw > 0,
+            "CRATStakeManager: no call for withdraw"
+        );
 
         require(
             calledForWithdraw + settings.delegatorsSettings.withdrawCooldown <=
@@ -1438,19 +1456,12 @@ contract CRATStakeManager is
         address delegator,
         address validator
     ) internal view returns (uint256) {
-        DelegatorPerValidatorInfo memory info = _delegatorInfo[delegator]
-            .delegatorPerValidator[validator];
-
-        uint256 validatorsCallForWithdraw = _validatorInfo[validator]
-            .calledForWithdraw;
-
-        if (info.calledForWithdraw > 0 && validatorsCallForWithdraw > 0) {
-            return Math.min(info.calledForWithdraw, validatorsCallForWithdraw);
-        } else if (validatorsCallForWithdraw > 0) {
-            return validatorsCallForWithdraw;
-        } else if (info.calledForWithdraw > 0) {
-            return info.calledForWithdraw;
-        } else return block.timestamp;
+        uint256 calledForWithdraw = _getDelegatorCallForWithdraw(
+            delegator,
+            validator
+        );
+        if (calledForWithdraw > 0) return calledForWithdraw;
+        else return block.timestamp;
     }
 
     function _fixedValidatorsReward() internal view returns (uint256) {
@@ -1469,5 +1480,48 @@ contract CRATStakeManager is
                 totalDelegatorsPool *
                 settings.delegatorsSettings.apr) /
             (PRECISION * YEAR_DURATION);
+    }
+
+    function _fixedRewardToAdd(
+        address validator
+    ) internal view returns (uint256) {
+        return
+            ((_rightBoarderV(validator) -
+                _validatorInfo[validator].fixedReward.lastUpdate) *
+                _validatorInfo[validator].amount *
+                _validatorInfo[validator].fixedReward.apr) /
+            (YEAR_DURATION * PRECISION);
+    }
+
+    function _getDelegatorCallForWithdraw(
+        address delegator,
+        address validator
+    ) internal view returns (uint256) {
+        if (
+            _delegatorInfo[delegator]
+                .delegatorPerValidator[validator]
+                .calledForWithdraw >
+            0 &&
+            _validatorInfo[validator].calledForWithdraw > 0
+        ) {
+            return
+                Math.min(
+                    _delegatorInfo[delegator]
+                        .delegatorPerValidator[validator]
+                        .calledForWithdraw,
+                    _validatorInfo[validator].calledForWithdraw
+                );
+        } else if (
+            _delegatorInfo[delegator]
+                .delegatorPerValidator[validator]
+                .calledForWithdraw > 0
+        ) {
+            return
+                _delegatorInfo[delegator]
+                    .delegatorPerValidator[validator]
+                    .calledForWithdraw;
+        } else if (_validatorInfo[validator].calledForWithdraw > 0) {
+            return _validatorInfo[validator].calledForWithdraw;
+        } else return 0;
     }
 }
