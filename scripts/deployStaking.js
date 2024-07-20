@@ -15,16 +15,16 @@ async function main() {
   // console.log("Proxy admin deployed ", proxyAdmin.target);
   const proxyAdmin = ProxyAdmin.attach("0x845e4145F7de2822d16FE233Ecd0181c61f1d65F");
 
-  // const impl = await CratStakeManager.deploy({gasLimit: 8000000});
-  // console.log("Implementation deployed ", impl.target);
+  const impl = await CratStakeManager.deploy({gasLimit: 8000000});
+  console.log("Implementation deployed ", impl.target);
 
-  // await new Promise(x => setTimeout(x, 30000));
+  await new Promise(x => setTimeout(x, 30000));
 
-  // const calldata = CratStakeManager.interface.encodeFunctionData("initialize", [DISTRIBUTOR, RECEIVER]);
-  // const proxyStaking = await TUP.deploy(impl.target, proxyAdmin.target, calldata, {gasLimit: 8000000});
-  // console.log("Staking proxy deployed ", proxyStaking.target);
-  const proxyStaking = CratStakeManager.attach("0xFA79Ad6F5128c236c3894523260d48D693b0f155");
-  await proxyStaking.grantRole("0x0000000000000000000000000000000000000000000000000000000000000000", "0x73026Bfc0235875F6C1fD057E4674aC5F1409dE9");
+  const calldata = CratStakeManager.interface.encodeFunctionData("initialize", [DISTRIBUTOR, RECEIVER]);
+  const proxyStaking = await TUP.deploy(impl.target, proxyAdmin.target, calldata, {gasLimit: 8000000});
+  console.log("Staking proxy deployed ", proxyStaking.target);
+  // const proxyStaking = CratStakeManager.attach("0xFA79Ad6F5128c236c3894523260d48D693b0f155");
+  // await proxyStaking.grantRole("0x0000000000000000000000000000000000000000000000000000000000000000", "0x73026Bfc0235875F6C1fD057E4674aC5F1409dE9");
 }
 
 // async function verify(contract, constructorArguments) {

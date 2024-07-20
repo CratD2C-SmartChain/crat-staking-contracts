@@ -165,7 +165,7 @@ contract CRATStakeManager is
         address _distributor,
         address _receiver
     ) public initializer {
-        require(_receiver != address(0), "CRATStakeManager: 0x00");
+        require(_receiver != address(0));
 
         __AccessControl_init();
         __ReentrancyGuard_init();
@@ -200,7 +200,7 @@ contract CRATStakeManager is
     function setSlashReceiver(
         address receiver
     ) external onlyRole(DEFAULT_ADMIN_ROLE) {
-        require(receiver != address(0), "CRATStakeManager: 0x00");
+        require(receiver != address(0));
         settings.slashReceiver = receiver;
     }
 
@@ -211,7 +211,7 @@ contract CRATStakeManager is
     function setValidatorsLimit(
         uint256 value
     ) external onlyRole(DEFAULT_ADMIN_ROLE) {
-        require(value >= _validators.length(), "CRATStakeManager: wrong limit");
+        require(value >= _validators.length());
         settings.validatorsLimit = value;
     }
 
@@ -272,7 +272,7 @@ contract CRATStakeManager is
     function setDelegatorsPercToSlash(
         uint256 value
     ) external onlyRole(DEFAULT_ADMIN_ROLE) {
-        require(value <= PRECISION, "CRATStakeManager: wrong percent");
+        require(value <= PRECISION);
         settings.delegatorsSettings.toSlash = value;
     }
 
@@ -382,7 +382,7 @@ contract CRATStakeManager is
 
         totalReward = totalDelegatorsReward + totalValidatorsReward;
 
-        require(msg.value >= totalReward, "CRATStakeManager: not enough coins");
+        require(msg.value >= totalReward);
 
         _totalValidatorsRewards.variableReward += totalValidatorsReward;
         _totalDelegatorsRewards.variableReward += totalDelegatorsReward;

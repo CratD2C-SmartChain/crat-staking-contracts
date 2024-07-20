@@ -25,20 +25,20 @@ module.exports = {
       "contracts/CRATStakeManager.sol": {
         version: "0.8.24",
         settings: {
-          viaIR: true,
+          // viaIR: true,
           optimizer: {
             enabled: true,
-            runs: 99,
+            runs: 1,
           },
         }
       },
       "contracts/mock/CRATStakeManagerTest.sol": {
         version: "0.8.24",
         settings: {
-          viaIR: true,
+          // viaIR: true,
           optimizer: {
             enabled: true,
-            runs: 99,
+            runs: 1,
             // details: {
             //   yul: true
             // }

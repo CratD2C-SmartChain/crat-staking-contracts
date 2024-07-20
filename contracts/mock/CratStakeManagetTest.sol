@@ -167,7 +167,7 @@ contract CRATStakeManagerTest is
         address _distributor,
         address _receiver
     ) public initializer {
-        require(_receiver != address(0), "CRATStakeManager: 0x00");
+        require(_receiver != address(0));
 
         __AccessControl_init();
         __ReentrancyGuard_init();
@@ -195,7 +195,7 @@ contract CRATStakeManagerTest is
         _totalDelegatorsRewards.fixedLastUpdate = testTime;
     }
 
-    function changeTestTime(uint256 value) external {
+    function changeTestTime(uint256 value) public {
         require(value > testTime);
         testTime = value;
     }
@@ -334,7 +334,7 @@ contract CRATStakeManagerTest is
     function withdrawExcessFixedReward(
         uint256 amount
     ) external onlyRole(DEFAULT_ADMIN_ROLE) nonReentrant {
-        require(forFixedReward >= amount);
+        require(forFixedReward >= amount, "CRATStakeManager: not enough coins");
         forFixedReward -= amount;
         _safeTransferETH(_msgSender(), amount);
     }
@@ -546,7 +546,8 @@ contract CRATStakeManagerTest is
         require(
             amount + _validatorInfo[sender].amount >=
                 settings.validatorsSettings.minimumThreshold &&
-                amount > 0
+                amount > 0,
+            "CRATStakeManager: wrong input amount"
         );
         if (!_validators.contains(sender))
             require(
@@ -643,10 +644,11 @@ contract CRATStakeManagerTest is
     function restakeAsDelegator(address validator) external nonReentrant {
         address sender = _msgSender();
         require(
-            _delegatorInfo[sender].validators.contains(validator)
+            _delegatorInfo[sender].validators.contains(validator),
+            "CRATStakeManager: wrong validator"
         );
         uint256 reward = _claimAsDelegatorPerValidator(sender, validator);
-        require(reward > 0);
+        require(reward > 0, "CRATStakeManager: nothing to restake");
         _depositAsDelegator(sender, reward, validator);
     }
 
@@ -655,7 +657,8 @@ contract CRATStakeManagerTest is
         address sender = _msgSender();
         require(
             isValidator(sender) &&
-                _validatorInfo[sender].calledForWithdraw == 0
+                _validatorInfo[sender].calledForWithdraw == 0,
+            "CRATStakeManager: not active validator"
         );
 
         _validatorCallForWithdraw(sender);
@@ -671,7 +674,8 @@ contract CRATStakeManagerTest is
                 _delegatorInfo[sender]
                     .delegatorPerValidator[validator]
                     .calledForWithdraw ==
-                0
+                0,
+            "CRATStakeManager: not active delegator"
         );
 
         _delegatorCallForWithdraw(sender, validator);
@@ -705,14 +709,17 @@ contract CRATStakeManagerTest is
     function reviveAsValidator() external payable nonReentrant {
         address sender = _msgSender();
         require(
-            isValidator(sender) && _validatorInfo[sender].calledForWithdraw > 0
+            isValidator(sender) && _validatorInfo[sender].calledForWithdraw > 0,
+            "CRATStakeManager: no withdraw call"
         );
         require(
             _validatorInfo[sender].amount + msg.value >=
-                settings.validatorsSettings.minimumThreshold
+                settings.validatorsSettings.minimumThreshold,
+            "CRATStakeManager: too low value"
         );
         require(
-            _validators.length() < settings.validatorsLimit
+            _validators.length() < settings.validatorsLimit,
+            "CRATStakeManager: limit reached"
         );
 
         // revive validator and his non-called for withdraw delegators
@@ -778,7 +785,8 @@ contract CRATStakeManagerTest is
                 info.amount + msg.value >=
                 settings.delegatorsSettings.minimumThreshold &&
                 info.calledForWithdraw > 0 &&
-                _validatorInfo[validator].calledForWithdraw == 0
+                _validatorInfo[validator].calledForWithdraw == 0,
+            "CRATStakeManager: can not revive"
         );
 
         stoppedDelegatorsPool -= info.amount;
