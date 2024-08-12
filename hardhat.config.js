@@ -48,14 +48,22 @@ module.exports = {
     }
   },
   networks: {
-    // hardhat: {
-    //   // allowUnlimitedContractSize: true,
-    //   forking: {
-    //     url: "https://cratd2c-testnet-node1.cratd2csmartchain.io/",
-    //     chainId: 65349,
-    //     blockNumber: 298148
-    //   }
-    // },
+    hardhat: {
+      hardfork: "merge",
+      chains: {
+        65349: {
+          hardforkHistory: {
+            merge: 4
+          }
+        }
+      },
+      // allowUnlimitedContractSize: true,
+      forking: {
+        url: "http://142.132.143.240:8545/",
+        chainId: 65349,
+        blockNumber: 1360613
+      }
+    },
     cratTestnet: {
       url: "https://cratd2c-testnet-node1.cratd2csmartchain.io/",
       chainId: 65349,
