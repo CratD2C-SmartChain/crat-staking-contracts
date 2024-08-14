@@ -32,7 +32,7 @@ module.exports = {
           },
         }
       },
-      "contracts/mock/CRATStakeManagerTest.sol": {
+      "contracts/mock/CRATStakeManagetTest.sol": {
         version: "0.8.24",
         settings: {
           // viaIR: true,
@@ -61,8 +61,9 @@ module.exports = {
       forking: {
         url: "http://142.132.143.240:8545/",
         chainId: 65349,
-        blockNumber: 1360613
-      }
+        blockNumber: 1411812
+      },
+      blockGasLimit: 420000000
     },
     cratTestnet: {
       url: "https://cratd2c-testnet-node1.cratd2csmartchain.io/",
@@ -74,5 +75,13 @@ module.exports = {
   // etherscan: {apiKey: API_KEY},
   gasReporter: {
     enabled: true,
+  },
+
+  mocha: {
+    timeout: 100000000
+  },
+
+  contractSizer: {
+    only: [':CRATStakeManager$', ':CRATStakeManagerTest$']
   }
 };

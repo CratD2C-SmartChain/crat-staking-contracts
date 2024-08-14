@@ -1,6 +1,6 @@
 const {ethers} = require("hardhat");
 
-const {DISTRIBUTOR, RECEIVER} = process.env;
+const {DISTRIBUTOR, RECEIVER, OWNER} = process.env;
 
 async function main() {
   const CratStakeManager = await ethers.getContractFactory("CRATStakeManagerTest");
@@ -21,7 +21,7 @@ async function main() {
   await new Promise(x => setTimeout(x, 30000));
 
   const calldata = CratStakeManager.interface.encodeFunctionData("initialize", [DISTRIBUTOR, RECEIVER]);
-  const proxyStaking = await TUP.deploy(impl.target, proxyAdmin.target, calldata, {gasLimit: 8000000});
+  const proxyStaking = await TUP.deploy(impl.target, OWNER, calldata, {gasLimit: 8000000});
   console.log("Staking proxy deployed ", proxyStaking.target);
   // const proxyStaking = CratStakeManager.attach("0xFA79Ad6F5128c236c3894523260d48D693b0f155");
   // await proxyStaking.grantRole("0x0000000000000000000000000000000000000000000000000000000000000000", "0x73026Bfc0235875F6C1fD057E4674aC5F1409dE9");

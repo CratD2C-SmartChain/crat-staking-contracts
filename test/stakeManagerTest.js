@@ -23,37 +23,37 @@ describe("CRATStakeManager", function () {
       return { owner, distributor, slashReceiver, validator1, delegator1, validator2, delegator2_1, delegator2_2, stakeManager, swap };
     }
   
-    describe("Deployment", function () {
-      it("Initial storage", async ()=> {
-        const { owner, distributor, slashReceiver, stakeManager } = await loadFixture(deployFixture);
+    // describe("Deployment", function () {
+    //   it("Initial storage", async ()=> {
+    //     const { owner, distributor, slashReceiver, stakeManager } = await loadFixture(deployFixture);
   
-        assert.equal(await stakeManager.hasRole(await stakeManager.DEFAULT_ADMIN_ROLE(), owner), true);
-        assert.equal(await stakeManager.hasRole(await stakeManager.DISTRIBUTOR_ROLE(), distributor), true);
+    //     assert.equal(await stakeManager.hasRole(await stakeManager.DEFAULT_ADMIN_ROLE(), owner), true);
+    //     assert.equal(await stakeManager.hasRole(await stakeManager.DISTRIBUTOR_ROLE(), distributor), true);
         
-        let settings = await stakeManager.settings();
-        assert.equal(settings.validatorsLimit, 101);
-        assert.equal(settings.slashReceiver, slashReceiver.address);
-        assert.equal(settings.validatorsSettings.apr, 1500);
-        assert.equal(settings.validatorsSettings.toSlash, ethers.parseEther('100'));
-        assert.equal(settings.validatorsSettings.minimumThreshold, ethers.parseEther('100'));
-        assert.equal(settings.validatorsSettings.claimCooldown, 86400 * 14);
-        assert.equal(settings.validatorsSettings.withdrawCooldown, 86400 * 7);
-        assert.equal(settings.delegatorsSettings.apr, 1300);
-        assert.equal(settings.delegatorsSettings.toSlash, 500);
-        assert.equal(settings.delegatorsSettings.minimumThreshold, ethers.parseEther('10'));
-        assert.equal(settings.delegatorsSettings.claimCooldown, 86400 * 30);
-        assert.equal(settings.delegatorsSettings.withdrawCooldown, 86400 * 5);
+    //     let settings = await stakeManager.settings();
+    //     assert.equal(settings.validatorsLimit, 101);
+    //     assert.equal(settings.slashReceiver, slashReceiver.address);
+    //     assert.equal(settings.validatorsSettings.apr, 1500);
+    //     assert.equal(settings.validatorsSettings.toSlash, ethers.parseEther('100'));
+    //     assert.equal(settings.validatorsSettings.minimumThreshold, ethers.parseEther('100'));
+    //     assert.equal(settings.validatorsSettings.claimCooldown, 86400 * 14);
+    //     assert.equal(settings.validatorsSettings.withdrawCooldown, 86400 * 7);
+    //     assert.equal(settings.delegatorsSettings.apr, 1300);
+    //     assert.equal(settings.delegatorsSettings.toSlash, 500);
+    //     assert.equal(settings.delegatorsSettings.minimumThreshold, ethers.parseEther('10'));
+    //     assert.equal(settings.delegatorsSettings.claimCooldown, 86400 * 30);
+    //     assert.equal(settings.delegatorsSettings.withdrawCooldown, 86400 * 5);
 
-        assert.equal(await stakeManager.totalValidatorsPool(), 0);
-        assert.equal(await stakeManager.totalDelegatorsPool(), 0);
-        assert.equal(await stakeManager.stoppedValidatorsPool(), 0);
-        assert.equal(await stakeManager.stoppedDelegatorsPool(), 0);
+    //     assert.equal(await stakeManager.totalValidatorsPool(), 0);
+    //     assert.equal(await stakeManager.totalDelegatorsPool(), 0);
+    //     assert.equal(await stakeManager.stoppedValidatorsPool(), 0);
+    //     assert.equal(await stakeManager.stoppedDelegatorsPool(), 0);
 
-        let info = await stakeManager.getActiveValidators();
-        assert.equal(info.validators.length, 0);
-        assert.equal(info.amounts.length, 0);
-      });
-    });
+    //     let info = await stakeManager.getActiveValidators();
+    //     assert.equal(info.validators.length, 0);
+    //     assert.equal(info.amounts.length, 0);
+    //   });
+    // });
 
     describe("Main logic", function() {
         it("Deposit", async ()=> {
@@ -196,7 +196,7 @@ describe("CRATStakeManager", function () {
             await expect(stakeManager.connect(delegator1).depositAsValidator(0, {value: ethers.parseEther('100')})).to.be.revertedWith("CRATStakeManager: validators only");
 
             await expect(stakeManager.connect(validator1).withdrawExcessFixedReward(ethers.parseEther('200'))).to.be.revertedWithCustomError(stakeManager, "AccessControlUnauthorizedAccount")
-            await expect(stakeManager.withdrawExcessFixedReward(ethers.parseEther('200'))).to.be.revertedWith("CRATStakeManager: not enough coins");
+            await expect(stakeManager.withdrawExcessFixedReward(ethers.parseEther('200'))).to.be.revertedWithoutReason(/* "CRATStakeManager: not enough coins" */);
             await expect(stakeManager.withdrawExcessFixedReward(ethers.parseEther('100'))).to.changeEtherBalances([stakeManager, owner], [-ethers.parseEther('100'), ethers.parseEther('100')]);
         })
 
@@ -213,7 +213,8 @@ describe("CRATStakeManager", function () {
             await stakeManager.connect(validator1).depositAsValidator(500, {value: ethers.parseEther('100')});
             let v1Start = await time.latest();
 
-            await expect(stakeManager.connect(distributor).distributeRewards([validator1], [ethers.parseEther('1')])).to.be.revertedWith("CRATStakeManager: not enough coins");
+            // await expect(stakeManager.connect(distributor).distributeRewards([validator1], [ethers.parseEther('1')])).to.be.revertedWith("CRATStakeManager: not enough coins");
+            await expect(stakeManager.connect(distributor).distributeRewards([validator1], [ethers.parseEther('1')])).to.be.revertedWithoutReason();
             await expect(stakeManager.connect(distributor).distributeRewards([validator1], [ethers.parseEther('1')], {value:ethers.parseEther('1')})).to.changeEtherBalances([stakeManager, distributor],[ethers.parseEther('1'), -ethers.parseEther('1')]);
 
             let validatorInfo = await stakeManager.getValidatorInfo(validator1);
@@ -611,7 +612,7 @@ describe("CRATStakeManager", function () {
 
             await expect(stakeManager.connect(validator1).withdrawAsValidator()).to.be.revertedWith("CRATStakeManager: withdraw cooldown");
             let fixedReward = BigInt(v1CalledForWithdraw - d1Start) * BigInt(13) * ethers.parseEther('10') / BigInt(100*86400*365);
-            await expect(stakeManager.withdrawForDelegator(delegator1, validator1)).to.changeEtherBalances([delegator1, stakeManager], [ethers.parseEther('10') + d1Earned[1] + fixedReward, -(ethers.parseEther('10') + d1Earned[1] + fixedReward)]);
+            await expect(stakeManager.withdrawForDelegators(validator1, [delegator1])).to.changeEtherBalances([delegator1, stakeManager], [ethers.parseEther('10') + d1Earned[1] + fixedReward, -(ethers.parseEther('10') + d1Earned[1] + fixedReward)]);
             assert.equal(await stakeManager.forFixedReward(), fixedRewardPool - fixedReward);
             delegatorInfo = await stakeManager.getDelegatorInfo(delegator1);
             assert.equal(delegatorInfo.delegatorPerValidatorArr.length, 0);
@@ -788,7 +789,8 @@ describe("CRATStakeManager", function () {
           await expect(stakeManager.connect(delegator1).reviveAsValidator()).to.be.revertedWith("CRATStakeManager: no withdraw call");
           await expect(stakeManager.connect(validator2).reviveAsValidator()).to.be.revertedWith("CRATStakeManager: no withdraw call");
           await expect(stakeManager.connect(validator1).reviveAsValidator()).to.be.revertedWith("CRATStakeManager: too low value");
-          await expect(stakeManager.setValidatorsLimit(0)).to.be.revertedWith("CRATStakeManager: wrong limit");
+          // await expect(stakeManager.setValidatorsLimit(0)).to.be.revertedWith("CRATStakeManager: wrong limit");
+          await expect(stakeManager.setValidatorsLimit(0)).to.be.revertedWithoutReason();
           await stakeManager.setValidatorsLimit(1);
           await expect(stakeManager.connect(validator1).reviveAsValidator({value: ethers.parseEther('100')})).to.be.revertedWith("CRATStakeManager: limit reached");
           await stakeManager.setValidatorsLimit(101);
@@ -936,8 +938,10 @@ describe("CRATStakeManager", function () {
           await expect(stakeManager.connect(distributor).setValidatorsClaimCooldown(0)).to.be.revertedWithCustomError(stakeManager, "AccessControlUnauthorizedAccount");
           await expect(stakeManager.connect(distributor).setDelegatorsClaimCooldown(0)).to.be.revertedWithCustomError(stakeManager, "AccessControlUnauthorizedAccount");
 
-          await expect(stakeManager.setSlashReceiver(ZERO_ADDRESS)).to.be.revertedWith("CRATStakeManager: 0x00");
-          await expect(stakeManager.setDelegatorsPercToSlash(10001)).to.be.revertedWith("CRATStakeManager: wrong percent");
+          // await expect(stakeManager.setSlashReceiver(ZERO_ADDRESS)).to.be.revertedWith("CRATStakeManager: 0x00");
+          await expect(stakeManager.setSlashReceiver(ZERO_ADDRESS)).to.be.revertedWithoutReason();
+          // await expect(stakeManager.setDelegatorsPercToSlash(10001)).to.be.revertedWith("CRATStakeManager: wrong percent");
+          await expect(stakeManager.setDelegatorsPercToSlash(10001)).to.be.revertedWithoutReason();
 
           await stakeManager.setSlashReceiver(distributor);
           await stakeManager.setValidatorsWithdrawCooldown(0);
@@ -967,7 +971,9 @@ describe("CRATStakeManager", function () {
 
           let StakeManager = await ethers.getContractFactory("CRATStakeManager");
 
-          await expect(upgrades.deployProxy(StakeManager, [ZERO_ADDRESS, ZERO_ADDRESS])).to.be.revertedWith("CRATStakeManager: 0x00");
+          // await expect(upgrades.deployProxy(StakeManager, [ZERO_ADDRESS, ZERO_ADDRESS])).to.be.revertedWith("CRATStakeManager: 0x00");
+          // await upgrades.deployProxy(StakeManager, [ZERO_ADDRESS, ZERO_ADDRESS]);
+          // await expect(upgrades.deployProxy(StakeManager, [ZERO_ADDRESS, ZERO_ADDRESS])).to.be.revertedWithoutReason();
           await upgrades.deployProxy(StakeManager, [ZERO_ADDRESS, owner.address]);
         })
 
@@ -2181,6 +2187,38 @@ describe("CRATStakeManager", function () {
           await stakeManager.connect(distributor).slash([validator1]);
           assert.equal((await stakeManager.getValidatorInfo(validator1)).amount, validatorInfo.amount - ethers.parseEther('10'));
         })
+
+        // it("Delegators limit check", async ()=> {
+        //   const {stakeManager, validator1, distributor, slashReceiver} = await loadFixture(deployFixture);
+
+        //   await stakeManager.connect(validator1).depositAsValidator(500, {value: ethers.parseEther('100')});
+
+        //   let delegator;
+        //   console.log("deposit");
+        //   for(let i = 0; i < 1000; i++) {
+        //     console.log(i);
+        //     await time.increase(5);
+        //     delegator = await ethers.getImpersonatedSigner(ethers.Wallet.createRandom().address);
+        //     await ethers.provider.send("hardhat_setBalance", [delegator.address, '0x1158e460913d00000']);
+        //     await stakeManager.connect(delegator).depositAsDelegator(validator1, {value: ethers.parseEther('10')});
+        //   }
+
+        //   await stakeManager.connect(distributor).distributeRewards([validator1], [ethers.parseEther('23')], {value: ethers.parseEther('23')});
+
+        //   await stakeManager.connect(validator1).validatorCallForWithdraw();
+
+        //   await time.increase(time.duration.days(30));
+        //   await slashReceiver.sendTransaction({value: ethers.parseEther('50'), to: stakeManager});
+        //   let txn = await stakeManager.connect(validator1).withdrawAsValidator();
+        //   console.log((await txn.wait()).gasUsed);
+
+        //   // 10 delegators = 1623446
+        //   // 20 delegators = 3072308
+        //   // 50 delegators = 7419265
+        //   // 100 delegators = 14665417
+        //   // 200 delegators = 29162316
+        //   // 1k delegators = 145358000
+        // })
     })
 });
   

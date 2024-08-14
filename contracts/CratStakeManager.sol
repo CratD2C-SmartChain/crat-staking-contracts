@@ -325,7 +325,7 @@ contract CRATStakeManager is
     function withdrawExcessFixedReward(
         uint256 amount
     ) external onlyRole(DEFAULT_ADMIN_ROLE) nonReentrant {
-        require(forFixedReward >= amount, "CRATStakeManager: not enough coins");
+        require(forFixedReward >= amount);
         forFixedReward -= amount;
         _safeTransferETH(_msgSender(), amount);
     }
@@ -696,11 +696,13 @@ contract CRATStakeManager is
     }
 
     /// @notice withdraw deposit for current delegator (after cooldown)
-    function withdrawForDelegator(
-        address delegator,
-        address validator
+    function withdrawForDelegators(
+        address validator,
+        address[] calldata delegators
     ) external nonReentrant {
-        _withdrawAsDelegator(delegator, validator);
+        for(uint256 i; i < delegators.length; i++) {
+            _withdrawAsDelegator(delegators[i], validator);
+        }
     }
 
     /// @notice exit the stop list as validator (increase your deposit, if necessary)
