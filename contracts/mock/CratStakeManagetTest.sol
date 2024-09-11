@@ -525,7 +525,7 @@ contract CRATStakeManagerTest is
 
     /** @notice make deposit for exact user as validator
      * @param sender address of future validator
-     * @param commission percent that this validator will give to delegators
+     * @param commission percent that this validator will take from variable rewards
      * @param vestingEnd timestamp of the vesting funds process end
      * @dev swap role only
      */
@@ -565,7 +565,7 @@ contract CRATStakeManagerTest is
     // public methods
 
     /** @notice make deposit as validator
-     * @param commission percent that this validator will give to delegators
+     * @param commission percent that this validator will take from variable rewards
      */
     function depositAsValidator(
         uint256 commission
@@ -936,7 +936,7 @@ contract CRATStakeManagerTest is
      * @param validator address
      * @return info validator info:
      * amount of validator's deposit
-     * commission percent that validator gives to its delegators
+     * commission percent that validator takes from its delegators
      * lastClaim previous claim timestamp
      * calledForWithdraw timestamp of #callForWithdrawAsValidator transaction (0 - if validator is active)
      * vestingEnd timestamp of the vesting funds process end
