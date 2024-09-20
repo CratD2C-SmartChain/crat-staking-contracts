@@ -631,7 +631,7 @@ contract CRATStakeManagerTest is
             _delegatorInfo[sender].validators.contains(validator),
             "wrong validator"
         );
-        uint256 reward = _claimAsDelegatorPerValidator(sender, validator);
+        uint256 reward = _claimAsDelegatorPerValidator(sender, validator, true);
         if (reward > 0) _safeTransferETH(sender, reward);
     }
 
@@ -654,7 +654,7 @@ contract CRATStakeManagerTest is
             _delegatorInfo[sender].validators.contains(validator),
             "wrong validator"
         );
-        uint256 reward = _claimAsDelegatorPerValidator(sender, validator);
+        uint256 reward = _claimAsDelegatorPerValidator(sender, validator, true);
         require(reward > 0, "zero");
         _depositAsDelegator(sender, reward, validator);
     }
@@ -1280,7 +1280,8 @@ contract CRATStakeManagerTest is
 
     function _claimAsDelegatorPerValidator(
         address delegator,
-        address validator
+        address validator,
+        bool checkCooldown
     ) internal returns (uint256 toClaim) {
         _updateDelegatorRewardPerValidator(delegator, validator);
 
@@ -1299,7 +1300,7 @@ contract CRATStakeManagerTest is
         toClaim += info.variableReward.variableReward;
         info.variableReward.totalClaimed += info.variableReward.variableReward;
 
-        if (toClaim > 0) {
+        if (toClaim > 0 && checkCooldown) {
             require(
                 info.lastClaim + settings.delegatorsSettings.claimCooldown <=
                     testTime,
@@ -1375,7 +1376,7 @@ contract CRATStakeManagerTest is
             .values();
         uint256 amount;
         for (uint256 i; i < delegators.length; i++) {
-            amount = _claimAsDelegatorPerValidator(delegators[i], validator);
+            amount = _claimAsDelegatorPerValidator(delegators[i], validator, false);
             amount += _delegatorInfo[delegators[i]]
                 .delegatorPerValidator[validator]
                 .amount;
@@ -1421,7 +1422,7 @@ contract CRATStakeManagerTest is
             "withdraw cooldown"
         );
 
-        uint256 amount = _claimAsDelegatorPerValidator(delegator, validator);
+        uint256 amount = _claimAsDelegatorPerValidator(delegator, validator, true);
         amount += _delegatorInfo[delegator]
             .delegatorPerValidator[validator]
             .amount;
