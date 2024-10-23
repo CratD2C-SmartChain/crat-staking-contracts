@@ -35,7 +35,7 @@ module.exports = {
       "contracts/mock/CRATStakeManagetTest.sol": {
         version: "0.8.24",
         settings: {
-          // viaIR: true,
+          viaIR: true,
           optimizer: {
             enabled: true,
             runs: 1,
