@@ -152,10 +152,14 @@ contract CRATStakeManager is
         address validator,
         uint256 amount
     );
-    event DelegatorClaimed(address delegator, uint256 amount);
-    event DelegatorCalledForWithdraw(address delegator);
-    event DelegatorRevived(address delegator);
-    event DelegatorWithdrawed(address delegator);
+    event DelegatorClaimed(
+        address delegator,
+        address validator,
+        uint256 amount
+    );
+    event DelegatorCalledForWithdraw(address delegator, address validator);
+    event DelegatorRevived(address delegator, address validator);
+    event DelegatorWithdrawed(address delegator, address validator);
 
     error ZeroAddress();
     error DelegatorsLimit();
@@ -168,13 +172,13 @@ contract CRATStakeManager is
     error InStoplistStatus(address account, bool stoplisted);
     error NotEnoughFixedRewards(uint256 toClaim, uint256 pool);
 
+    receive() external payable {
+        forFixedReward += msg.value;
+    }
+
     /// @custom:oz-upgrades-unsafe-allow constructor
     constructor() {
         _disableInitializers();
-    }
-
-    receive() external payable {
-        forFixedReward += msg.value;
     }
 
     function initialize(
@@ -794,7 +798,7 @@ contract CRATStakeManager is
         info.fixedReward.apr = settings.delegatorsSettings.apr;
         delete info.calledForWithdraw;
 
-        emit DelegatorRevived(sender);
+        emit DelegatorRevived(sender, validator);
     }
 
     // view methods
@@ -1293,7 +1297,7 @@ contract CRATStakeManager is
             delete info.variableReward.variableReward;
         }
 
-        emit DelegatorClaimed(delegator, toClaim);
+        emit DelegatorClaimed(delegator, validator, toClaim);
     }
 
     function _validatorCallForWithdraw(address sender) internal {
@@ -1340,7 +1344,7 @@ contract CRATStakeManager is
             ].delegatorPerValidator[validator].amount;
         }
 
-        emit DelegatorCalledForWithdraw(sender);
+        emit DelegatorCalledForWithdraw(sender, validator);
     }
 
     function _withdrawAsValidator(address validator) internal {
@@ -1382,7 +1386,7 @@ contract CRATStakeManager is
             ];
             _safeTransferETH(delegators[i], amount);
 
-            emit DelegatorWithdrawed(delegators[i]);
+            emit DelegatorWithdrawed(delegators[i], validator);
         }
 
         amount = _claimAsValidator(validator);
@@ -1438,7 +1442,7 @@ contract CRATStakeManager is
         delete _delegatorInfo[delegator].delegatorPerValidator[validator];
         _safeTransferETH(delegator, amount);
 
-        emit DelegatorWithdrawed(delegator);
+        emit DelegatorWithdrawed(delegator, validator);
     }
 
     function _updateFixedValidatorsReward() internal {
