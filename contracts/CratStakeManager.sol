@@ -1278,10 +1278,12 @@ contract CRATStakeManager is
         if (forFixedReward < toClaim)
             revert NotEnoughFixedRewards(toClaim, forFixedReward);
 
+        uint256 varRew = info.variableReward.variableReward;
+
         forFixedReward -= toClaim;
         info.fixedReward.totalClaimed += toClaim;
-        toClaim += info.variableReward.variableReward;
-        info.variableReward.totalClaimed += info.variableReward.variableReward;
+        toClaim += varRew;
+        info.variableReward.totalClaimed += varRew;
 
         if (toClaim > 0 && checkCooldown) {
             if (
@@ -1303,17 +1305,21 @@ contract CRATStakeManager is
     function _validatorCallForWithdraw(address sender) internal {
         _updateValidatorReward(sender);
 
+        (uint256 amount, uint256 delegatedAmount) = (
+            _validatorInfo[sender].amount,
+            _validatorInfo[sender].delegatedAmount
+        );
+
         _validatorInfo[sender].calledForWithdraw = block.timestamp;
         _validators.remove(sender);
         _stopListValidators.add(sender);
 
-        totalValidatorsPool -= _validatorInfo[sender].amount;
-        totalDelegatorsPool -= _validatorInfo[sender].delegatedAmount;
-        stoppedValidatorsPool += _validatorInfo[sender].amount;
-        stoppedDelegatorsPool += _validatorInfo[sender].delegatedAmount;
+        totalValidatorsPool -= amount;
+        totalDelegatorsPool -= delegatedAmount;
+        stoppedValidatorsPool += amount;
+        stoppedDelegatorsPool += delegatedAmount;
 
-        _validatorInfo[sender].stoppedDelegatedAmount += _validatorInfo[sender]
-            .delegatedAmount;
+        _validatorInfo[sender].stoppedDelegatedAmount += delegatedAmount;
         delete _validatorInfo[sender].delegatedAmount;
 
         emit ValidatorCalledForWithdraw(sender);
@@ -1330,18 +1336,13 @@ contract CRATStakeManager is
             .calledForWithdraw = block.timestamp;
 
         if (_validatorInfo[validator].calledForWithdraw == 0) {
-            totalDelegatorsPool -= _delegatorInfo[sender]
+            uint256 amount = _delegatorInfo[sender]
                 .delegatorPerValidator[validator]
                 .amount;
-            stoppedDelegatorsPool += _delegatorInfo[sender]
-                .delegatorPerValidator[validator]
-                .amount;
-            _validatorInfo[validator].delegatedAmount -= _delegatorInfo[sender]
-                .delegatorPerValidator[validator]
-                .amount;
-            _validatorInfo[validator].stoppedDelegatedAmount += _delegatorInfo[
-                sender
-            ].delegatorPerValidator[validator].amount;
+            totalDelegatorsPool -= amount;
+            stoppedDelegatorsPool += amount;
+            _validatorInfo[validator].delegatedAmount -= amount;
+            _validatorInfo[validator].stoppedDelegatedAmount += amount;
         }
 
         emit DelegatorCalledForWithdraw(sender, validator);
@@ -1389,9 +1390,11 @@ contract CRATStakeManager is
             emit DelegatorWithdrawed(delegators[i], validator);
         }
 
+        uint256 validatorsAmount = _validatorInfo[validator].amount;
+
         amount = _claimAsValidator(validator);
-        amount += _validatorInfo[validator].amount;
-        stoppedValidatorsPool -= _validatorInfo[validator].amount;
+        amount += validatorsAmount;
+        stoppedValidatorsPool -= validatorsAmount;
         stoppedDelegatorsPool -= _validatorInfo[validator]
             .stoppedDelegatedAmount;
         _stopListValidators.remove(validator);
@@ -1430,12 +1433,12 @@ contract CRATStakeManager is
             .delegatorPerValidator[validator]
             .amount;
 
-        stoppedDelegatorsPool -= _delegatorInfo[delegator]
+        uint256 delegatorsAmount = _delegatorInfo[delegator]
             .delegatorPerValidator[validator]
             .amount;
-        _validatorInfo[validator].stoppedDelegatedAmount -= _delegatorInfo[
-            delegator
-        ].delegatorPerValidator[validator].amount;
+
+        stoppedDelegatorsPool -= delegatorsAmount;
+        _validatorInfo[validator].stoppedDelegatedAmount -= delegatorsAmount;
         _validatorInfo[validator].delegators.remove(delegator);
         _delegatorInfo[delegator].validators.remove(validator);
 
@@ -1519,31 +1522,18 @@ contract CRATStakeManager is
         address delegator,
         address validator
     ) internal view returns (uint256) {
-        if (
+        (uint256 validatorCall, uint256 delegatorCall) = (
+            _validatorInfo[validator].calledForWithdraw,
             _delegatorInfo[delegator]
                 .delegatorPerValidator[validator]
-                .calledForWithdraw >
-            0 &&
-            _validatorInfo[validator].calledForWithdraw > 0
-        ) {
-            return
-                Math.min(
-                    _delegatorInfo[delegator]
-                        .delegatorPerValidator[validator]
-                        .calledForWithdraw,
-                    _validatorInfo[validator].calledForWithdraw
-                );
-        } else if (
-            _delegatorInfo[delegator]
-                .delegatorPerValidator[validator]
-                .calledForWithdraw > 0
-        ) {
-            return
-                _delegatorInfo[delegator]
-                    .delegatorPerValidator[validator]
-                    .calledForWithdraw;
-        } else if (_validatorInfo[validator].calledForWithdraw > 0) {
-            return _validatorInfo[validator].calledForWithdraw;
+                .calledForWithdraw
+        );
+        if (delegatorCall > 0 && validatorCall > 0) {
+            return Math.min(delegatorCall, validatorCall);
+        } else if (delegatorCall > 0) {
+            return delegatorCall;
+        } else if (validatorCall > 0) {
+            return validatorCall;
         } else return 0;
     }
 }
