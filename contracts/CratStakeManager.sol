@@ -1215,6 +1215,7 @@ contract CRATStakeManager is
         ); // necessary to choose only active validator
 
         if (!_delegatorInfo[delegator].validators.contains(validator)) {
+            if (_validatorInfo[validator].delegators.length() == 4800) revert();
             _delegatorInfo[delegator].validators.add(validator);
             _validatorInfo[validator].delegators.add(delegator);
             _delegatorInfo[delegator]
@@ -1291,7 +1292,7 @@ contract CRATStakeManager is
         toClaim += info.variableReward.variableReward;
         info.variableReward.totalClaimed += info.variableReward.variableReward;
 
-        if (toClaim > 0 && checkCooldown) { 
+        if (toClaim > 0 && checkCooldown) {
             require(
                 info.lastClaim + settings.delegatorsSettings.claimCooldown <=
                     block.timestamp,
@@ -1367,7 +1368,11 @@ contract CRATStakeManager is
             .values();
         uint256 amount;
         for (uint256 i; i < delegators.length; i++) {
-            amount = _claimAsDelegatorPerValidator(delegators[i], validator, false);
+            amount = _claimAsDelegatorPerValidator(
+                delegators[i],
+                validator,
+                false
+            );
             amount += _delegatorInfo[delegators[i]]
                 .delegatorPerValidator[validator]
                 .amount;
@@ -1413,7 +1418,11 @@ contract CRATStakeManager is
             "CRATStakeManager: withdraw cooldown"
         );
 
-        uint256 amount = _claimAsDelegatorPerValidator(delegator, validator, true);
+        uint256 amount = _claimAsDelegatorPerValidator(
+            delegator,
+            validator,
+            true
+        );
         amount += _delegatorInfo[delegator]
             .delegatorPerValidator[validator]
             .amount;

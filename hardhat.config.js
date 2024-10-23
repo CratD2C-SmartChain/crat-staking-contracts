@@ -61,14 +61,14 @@ module.exports = {
       forking: {
         url: "http://142.132.143.240:8545/",
         chainId: 65349,
-        blockNumber: 1411812
+        // blockNumber: 1411812
       },
       blockGasLimit: 420000000
     },
     cratTestnet: {
       url: "https://cratd2c-testnet-node1.cratd2csmartchain.io/",
       chainId: 65349,
-      gasPrice: 25000000000,
+      gasPrice: 10000000000,
       accounts: [PRIVATE_KEY]
     }
   },
