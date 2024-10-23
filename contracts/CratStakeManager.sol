@@ -1250,11 +1250,6 @@ contract CRATStakeManager is
             delete _validatorInfo[validator].fixedReward.fixedReward;
         } else delete toClaim;
 
-        // if (forFixedReward < toClaim)
-        //     revert NotEnoughFixedRewards(toClaim, forFixedReward);
-
-        // forFixedReward -= toClaim;
-        // _validatorInfo[validator].fixedReward.totalClaimed += toClaim;
         toClaim += _validatorInfo[validator].variableReward.variableReward;
         _validatorInfo[validator].variableReward.totalClaimed += _validatorInfo[
             validator
@@ -1275,8 +1270,6 @@ contract CRATStakeManager is
 
             if (_validatorInfo[validator].lastClaim > 0)
                 _validatorInfo[validator].lastClaim = block.timestamp;
-            // delete _validatorInfo[validator].fixedReward.fixedReward;
-            // delete _validatorInfo[validator].variableReward.variableReward;
         }
 
         emit ValidatorClaimed(validator, toClaim);
@@ -1300,13 +1293,8 @@ contract CRATStakeManager is
             delete info.fixedReward.fixedReward;
         } else delete toClaim;
 
-        // if (forFixedReward < toClaim)
-        //     revert NotEnoughFixedRewards(toClaim, forFixedReward);
-
         uint256 varRew = info.variableReward.variableReward;
 
-        // forFixedReward -= toClaim;
-        // info.fixedReward.totalClaimed += toClaim;
         toClaim += varRew;
         info.variableReward.totalClaimed += varRew;
         delete info.variableReward.variableReward;
@@ -1321,8 +1309,6 @@ contract CRATStakeManager is
                     info.lastClaim + settings.delegatorsSettings.claimCooldown
                 );
             if (info.lastClaim > 0) info.lastClaim = block.timestamp;
-            // delete info.fixedReward.fixedReward;
-            // delete info.variableReward.variableReward;
         }
 
         emit DelegatorClaimed(delegator, validator, toClaim);

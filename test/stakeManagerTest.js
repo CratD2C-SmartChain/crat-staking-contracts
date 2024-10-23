@@ -4,7 +4,7 @@ const {
 } = require("@nomicfoundation/hardhat-toolbox/network-helpers");
 const { expect, assert } = require("chai");
 const { ethers, upgrades } = require("hardhat");
-const { validator } = require("web3");
+const { validator, eth } = require("web3");
 
 const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000";
 
@@ -15,11 +15,11 @@ describe("CRATStakeManager", function () {
     const CRATStakeManager = await ethers.getContractFactory("CRATStakeManager");
     const stakeManager = await upgrades.deployProxy(CRATStakeManager, [distributor.address, slashReceiver.address]);
 
-      assert.equal((await stakeManager.settings()).validatorsSettings.minimumThreshold, ethers.parseEther('100000'));
-      assert.equal((await stakeManager.settings()).delegatorsSettings.minimumThreshold, ethers.parseEther('1000'));
+    assert.equal((await stakeManager.settings()).validatorsSettings.minimumThreshold, ethers.parseEther('100000'));
+    assert.equal((await stakeManager.settings()).delegatorsSettings.minimumThreshold, ethers.parseEther('1000'));
 
-      await stakeManager.setValidatorsMinimum(ethers.parseEther('100'));
-      await stakeManager.setDelegatorsMinimum(ethers.parseEther('10'));
+    await stakeManager.setValidatorsMinimum(ethers.parseEther('100'));
+    await stakeManager.setDelegatorsMinimum(ethers.parseEther('10'));
 
     return { owner, distributor, slashReceiver, validator1, delegator1, validator2, delegator2_1, delegator2_2, stakeManager, swap };
   }
@@ -2576,6 +2576,52 @@ describe("CRATStakeManager", function () {
       rewardD = BigInt(currentTime - start2) * ethers.parseEther('21') * BigInt(13) / BigInt(365*86400*100) + rewardD.fixedReward;
       await expect(stakeManager.connect(delegator1).claimAsDelegatorPerValidator(validator1)).to.changeEtherBalances([stakeManager, delegator1], [-rewardD, rewardD]);
       assert.equal((await stakeManager.delegatorEarnedPerValidator(delegator1, validator1)).fixedReward, 0);
+    })
+
+    it("Cooldown limit check", async ()=> {
+      const {stakeManager} = await loadFixture(deployFixture);
+
+      await expect(stakeManager.setValidatorsWithdrawCooldown(time.duration.years(1) + 1)).to.be.revertedWithCustomError(stakeManager, "WrongValue").withArgs(time.duration.years(1) + 1);
+      await expect(stakeManager.setDelegatorsWithdrawCooldown(time.duration.years(1) + 1)).to.be.revertedWithCustomError(stakeManager, "WrongValue").withArgs(time.duration.years(1) + 1);
+      await expect(stakeManager.setValidatorsClaimCooldown(time.duration.years(1) + 1)).to.be.revertedWithCustomError(stakeManager, "WrongValue").withArgs(time.duration.years(1) + 1);
+      await expect(stakeManager.setDelegatorsClaimCooldown(time.duration.years(1) + 1)).to.be.revertedWithCustomError(stakeManager, "WrongValue").withArgs(time.duration.years(1) + 1);
+    })
+
+    it("Check current validator of the delegator while delegatorCallForWithdraw() call", async ()=> {
+      const {stakeManager, validator1, validator2, delegator1} = await loadFixture(deployFixture);
+
+      await stakeManager.connect(validator1).depositAsValidator(2000, {value: ethers.parseEther('100')});
+      await stakeManager.connect(delegator1).depositAsDelegator(validator1, {value: ethers.parseEther('10')});
+
+      await expect(stakeManager.connect(delegator1).delegatorCallForWithdraw(validator2)).to.be.revertedWithCustomError(stakeManager, "ValidatorsOnly").withArgs(validator2);
+    })
+
+    it("Check isDelegator while reviveAsDelegator() call", async ()=> {
+      const {stakeManager, delegator1} = await loadFixture(deployFixture);
+
+      await expect(stakeManager.connect(delegator1).reviveAsDelegator(delegator1)).to.be.revertedWithCustomError(stakeManager, "DelegatorsOnly").withArgs(delegator1);
+    })
+
+    // UNCOMMENT accounts IN hardhat.config.networks.hardhat TO MAKE IT SUCCESSFUL !!!
+    it("Check delegators per 1 validator limit", async ()=> {
+      const {stakeManager, validator1/* , owner */} = await loadFixture(deployFixture);
+
+      await stakeManager.connect(validator1).depositAsValidator(2000, {value: ethers.parseEther('100')});
+
+      let signers = await ethers.getSigners();
+
+      for(let i = 9; i < 4809; i++) {
+        await stakeManager.connect(signers[i]).depositAsDelegator(validator1, {value: ethers.parseEther('10')});
+      }
+
+      await expect(stakeManager.connect(signers[4809]).depositAsDelegator(validator1, {value: ethers.parseEther('10')})).to.be.revertedWithCustomError(stakeManager, "DelegatorsLimit");
+    })
+
+    it("Close zero addres brunch in deployment", async ()=> {
+      const {stakeManager} = await loadFixture(deployFixture);
+
+      const CRATStakeManager = await ethers.getContractFactory("CRATStakeManager");
+      await expect(upgrades.deployProxy(CRATStakeManager, [ZERO_ADDRESS, ZERO_ADDRESS])).to.be.revertedWithCustomError(stakeManager, "ZeroAddress");
     })
   })
 });

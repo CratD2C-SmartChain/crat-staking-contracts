@@ -49,6 +49,10 @@ module.exports = {
   },
   networks: {
     hardhat: {
+      accounts: {
+        count: 4810,
+        accountsBalance: "1000000000000000000000"
+      },
       // hardfork: "merge",
       // chains: {
       //   65349: {
