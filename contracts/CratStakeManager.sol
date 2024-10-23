@@ -434,12 +434,13 @@ contract CRATStakeManager is
                     stoppedDelegatorsPool -= fee;
                     total += fee;
                 } else {
+                    totalValidatorsPool -= fee;
+                    
                     // for validator
                     if (
                         _validatorInfo[validators[i]].amount <
                         settings.validatorsSettings.minimumThreshold
                     ) {
-                        totalValidatorsPool -= fee;
                         _validatorCallForWithdraw(validators[i]);
 
                         // for stopped delegators
@@ -453,8 +454,6 @@ contract CRATStakeManager is
                         stoppedDelegatorsPool -= fee;
                         total += fee;
                     } else {
-                        totalValidatorsPool -= fee;
-
                         // for active delegators
                         fee =
                             (delegatorsPerc *
