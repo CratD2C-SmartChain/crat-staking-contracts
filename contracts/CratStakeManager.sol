@@ -170,7 +170,6 @@ contract CRATStakeManager is
     error DelegatorsOnly(address account);
     error Cooldown(bool forClaim, uint256 upperBond);
     error InStoplistStatus(address account, bool stoplisted);
-    error NotEnoughFixedRewards(uint256 toClaim, uint256 pool);
 
     receive() external payable {
         forFixedReward += msg.value;
@@ -349,8 +348,7 @@ contract CRATStakeManager is
     function withdrawExcessFixedReward(
         uint256 amount
     ) external onlyRole(DEFAULT_ADMIN_ROLE) nonReentrant {
-        if (forFixedReward < amount)
-            revert NotEnoughFixedRewards(amount, forFixedReward);
+        if (forFixedReward < amount) revert WrongValue(amount);
         forFixedReward -= amount;
         _safeTransferETH(_msgSender(), amount);
     }
@@ -619,7 +617,10 @@ contract CRATStakeManager is
      */
     function claimAsValidator() external nonReentrant {
         address sender = _msgSender();
-        if (!isValidator(sender)) revert ValidatorsOnly(sender);
+        if (
+            !isValidator(sender) &&
+            _validatorInfo[sender].fixedReward.fixedReward == 0
+        ) revert ValidatorsOnly(sender);
         uint256 reward = _claimAsValidator(sender);
         if (reward > 0) _safeTransferETH(sender, reward);
     }
@@ -631,8 +632,14 @@ contract CRATStakeManager is
         address validator
     ) external nonReentrant {
         address sender = _msgSender();
-        if (!_delegatorInfo[sender].validators.contains(validator))
-            revert ValidatorsOnly(validator);
+        if (
+            !_delegatorInfo[sender].validators.contains(validator) &&
+            _delegatorInfo[sender]
+                .delegatorPerValidator[validator]
+                .fixedReward
+                .fixedReward ==
+            0
+        ) revert ValidatorsOnly(validator);
         uint256 reward = _claimAsDelegatorPerValidator(sender, validator, true);
         if (reward > 0) _safeTransferETH(sender, reward);
     }
@@ -653,7 +660,7 @@ contract CRATStakeManager is
     function restakeAsDelegator(address validator) external nonReentrant {
         address sender = _msgSender();
         if (!_delegatorInfo[sender].validators.contains(validator))
-            revert ValidatorsOnly(validator);
+            revert DelegatorsOnly(sender);
         uint256 reward = _claimAsDelegatorPerValidator(sender, validator, true);
         if (reward == 0) revert WrongValue(reward);
         _depositAsDelegator(sender, reward, validator);
@@ -1237,15 +1244,22 @@ contract CRATStakeManager is
 
         toClaim = _validatorInfo[validator].fixedReward.fixedReward;
 
-        if (forFixedReward < toClaim)
-            revert NotEnoughFixedRewards(toClaim, forFixedReward);
+        if (forFixedReward >= toClaim) {
+            forFixedReward -= toClaim;
+            _validatorInfo[validator].fixedReward.totalClaimed += toClaim;
+            delete _validatorInfo[validator].fixedReward.fixedReward;
+        } else delete toClaim;
 
-        forFixedReward -= toClaim;
-        _validatorInfo[validator].fixedReward.totalClaimed += toClaim;
+        // if (forFixedReward < toClaim)
+        //     revert NotEnoughFixedRewards(toClaim, forFixedReward);
+
+        // forFixedReward -= toClaim;
+        // _validatorInfo[validator].fixedReward.totalClaimed += toClaim;
         toClaim += _validatorInfo[validator].variableReward.variableReward;
         _validatorInfo[validator].variableReward.totalClaimed += _validatorInfo[
             validator
         ].variableReward.variableReward;
+        delete _validatorInfo[validator].variableReward.variableReward;
 
         if (toClaim > 0) {
             if (
@@ -1259,9 +1273,10 @@ contract CRATStakeManager is
                         settings.validatorsSettings.claimCooldown
                 );
 
-            _validatorInfo[validator].lastClaim = block.timestamp;
-            delete _validatorInfo[validator].fixedReward.fixedReward;
-            delete _validatorInfo[validator].variableReward.variableReward;
+            if (_validatorInfo[validator].lastClaim > 0)
+                _validatorInfo[validator].lastClaim = block.timestamp;
+            // delete _validatorInfo[validator].fixedReward.fixedReward;
+            // delete _validatorInfo[validator].variableReward.variableReward;
         }
 
         emit ValidatorClaimed(validator, toClaim);
@@ -1279,15 +1294,22 @@ contract CRATStakeManager is
 
         toClaim = info.fixedReward.fixedReward;
 
-        if (forFixedReward < toClaim)
-            revert NotEnoughFixedRewards(toClaim, forFixedReward);
+        if (forFixedReward >= toClaim) {
+            forFixedReward -= toClaim;
+            info.fixedReward.totalClaimed += toClaim;
+            delete info.fixedReward.fixedReward;
+        } else delete toClaim;
+
+        // if (forFixedReward < toClaim)
+        //     revert NotEnoughFixedRewards(toClaim, forFixedReward);
 
         uint256 varRew = info.variableReward.variableReward;
 
-        forFixedReward -= toClaim;
-        info.fixedReward.totalClaimed += toClaim;
+        // forFixedReward -= toClaim;
+        // info.fixedReward.totalClaimed += toClaim;
         toClaim += varRew;
         info.variableReward.totalClaimed += varRew;
+        delete info.variableReward.variableReward;
 
         if (toClaim > 0 && checkCooldown) {
             if (
@@ -1298,9 +1320,9 @@ contract CRATStakeManager is
                     true,
                     info.lastClaim + settings.delegatorsSettings.claimCooldown
                 );
-            info.lastClaim = block.timestamp;
-            delete info.fixedReward.fixedReward;
-            delete info.variableReward.variableReward;
+            if (info.lastClaim > 0) info.lastClaim = block.timestamp;
+            // delete info.fixedReward.fixedReward;
+            // delete info.variableReward.variableReward;
         }
 
         emit DelegatorClaimed(delegator, validator, toClaim);
@@ -1375,6 +1397,7 @@ contract CRATStakeManager is
             .delegators
             .values();
         uint256 amount;
+        uint256 fixedRewardToStore;
         for (uint256 i; i < delegators.length; i++) {
             amount = _claimAsDelegatorPerValidator(
                 delegators[i],
@@ -1386,9 +1409,18 @@ contract CRATStakeManager is
                 .amount;
             _delegatorInfo[delegators[i]].validators.remove(validator);
             _validatorInfo[validator].delegators.remove(delegators[i]);
+            fixedRewardToStore = _delegatorInfo[delegators[i]]
+                .delegatorPerValidator[validator]
+                .fixedReward
+                .fixedReward;
             delete _delegatorInfo[delegators[i]].delegatorPerValidator[
                 validator
             ];
+            _delegatorInfo[delegators[i]]
+                .delegatorPerValidator[validator]
+                .fixedReward
+                .fixedReward = fixedRewardToStore;
+            delete fixedRewardToStore;
             _safeTransferETH(delegators[i], amount);
 
             emit DelegatorWithdrawed(delegators[i], validator);
@@ -1397,6 +1429,7 @@ contract CRATStakeManager is
         uint256 validatorsAmount = _validatorInfo[validator].amount;
 
         amount = _claimAsValidator(validator);
+        fixedRewardToStore = _validatorInfo[validator].fixedReward.fixedReward;
         amount += validatorsAmount;
         stoppedValidatorsPool -= validatorsAmount;
         stoppedDelegatorsPool -= _validatorInfo[validator]
@@ -1404,6 +1437,7 @@ contract CRATStakeManager is
         _stopListValidators.remove(validator);
 
         delete _validatorInfo[validator];
+        _validatorInfo[validator].fixedReward.fixedReward = fixedRewardToStore;
         _safeTransferETH(validator, amount);
 
         emit ValidatorWithdrawed(validator);
@@ -1443,7 +1477,15 @@ contract CRATStakeManager is
         _validatorInfo[validator].delegators.remove(delegator);
         _delegatorInfo[delegator].validators.remove(validator);
 
+        uint256 fixedRewardToStore = _delegatorInfo[delegator]
+            .delegatorPerValidator[validator]
+            .fixedReward
+            .fixedReward;
         delete _delegatorInfo[delegator].delegatorPerValidator[validator];
+        _delegatorInfo[delegator]
+            .delegatorPerValidator[validator]
+            .fixedReward
+            .fixedReward = fixedRewardToStore;
         _safeTransferETH(delegator, amount);
 
         emit DelegatorWithdrawed(delegator, validator);
