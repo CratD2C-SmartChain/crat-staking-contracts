@@ -137,6 +137,7 @@ contract CRATStakeManager is
         uint256 potentialPenalty;
     }
 
+    // users events
     event ValidatorDeposited(
         address validator,
         uint256 amount,
@@ -161,6 +162,22 @@ contract CRATStakeManager is
     event DelegatorRevived(address delegator, address validator);
     event DelegatorWithdrawed(address delegator, address validator);
 
+    // admin methods events
+    event SlashReceiverChanged(address receiver);
+    event ValidatorsLimitChanged(uint256 limit);
+    event ValidatorsWithdrawCooldownChanged(uint256 cooldown);
+    event DelegatorsWithdrawCooldownChanged(uint256 cooldown);
+    event ValidatorsClaimCooldownChanged(uint256 cooldown);
+    event DelegatorsClaimCooldownChanged(uint256 cooldown);
+    event ValidatorsMinDepositChanged(uint256 minDeposit);
+    event DelegatorsMinDepositChanged(uint256 minDeposit);
+    event ValidatorsToSlashValueChanged(uint256 value);
+    event DelegatorsToSlashPercentChanged(uint256 perc);
+    event ValidatorsAPRChanged(uint256 apr);
+    event DelegatorsAPRChanged(uint256 apr);
+    event ExcessFixedRewardWithdrawed(uint256 amount);
+
+    // custom error codes
     error ZeroAddress();
     error DelegatorsLimit();
     error NativeTransferFailed();
@@ -221,6 +238,7 @@ contract CRATStakeManager is
     ) external onlyRole(DEFAULT_ADMIN_ROLE) {
         if (receiver == address(0)) revert ZeroAddress();
         settings.slashReceiver = receiver;
+        emit SlashReceiverChanged(receiver);
     }
 
     /** @notice change validators limit
@@ -232,6 +250,7 @@ contract CRATStakeManager is
     ) external onlyRole(DEFAULT_ADMIN_ROLE) {
         if (value < _validators.length()) revert WrongValidatorsLength();
         settings.validatorsLimit = value;
+        emit ValidatorsLimitChanged(value);
     }
 
     /** @notice change validators' withdraw cooldown
@@ -243,6 +262,7 @@ contract CRATStakeManager is
     ) external onlyRole(DEFAULT_ADMIN_ROLE) {
         _cooldownCheck(value);
         settings.validatorsSettings.withdrawCooldown = value;
+        emit ValidatorsWithdrawCooldownChanged(value);
     }
 
     /** @notice change delegators' withdraw cooldown
@@ -254,6 +274,7 @@ contract CRATStakeManager is
     ) external onlyRole(DEFAULT_ADMIN_ROLE) {
         _cooldownCheck(value);
         settings.delegatorsSettings.withdrawCooldown = value;
+        emit DelegatorsWithdrawCooldownChanged(value);
     }
 
     /** @notice change validators' minimum amount to deposit
@@ -264,6 +285,7 @@ contract CRATStakeManager is
         uint256 value
     ) external onlyRole(DEFAULT_ADMIN_ROLE) {
         settings.validatorsSettings.minimumThreshold = value;
+        emit ValidatorsMinDepositChanged(value);
     }
 
     /** @notice change delegators' minimum amount to deposit
@@ -274,6 +296,7 @@ contract CRATStakeManager is
         uint256 value
     ) external onlyRole(DEFAULT_ADMIN_ROLE) {
         settings.delegatorsSettings.minimumThreshold = value;
+        emit DelegatorsMinDepositChanged(value);
     }
 
     /** @notice change validators' token amount to slash (to substract from their deposit)
@@ -284,6 +307,7 @@ contract CRATStakeManager is
         uint256 value
     ) external onlyRole(DEFAULT_ADMIN_ROLE) {
         settings.validatorsSettings.toSlash = value;
+        emit ValidatorsToSlashValueChanged(value);
     }
 
     /** @notice change delegators' percent to slash (to substract that percent of their deposit)
@@ -295,6 +319,7 @@ contract CRATStakeManager is
     ) external onlyRole(DEFAULT_ADMIN_ROLE) {
         if (value > PRECISION) revert WrongValue(value);
         settings.delegatorsSettings.toSlash = value;
+        emit DelegatorsToSlashPercentChanged(value);
     }
 
     /** @notice change validators' fixed APR
@@ -306,6 +331,7 @@ contract CRATStakeManager is
     ) external onlyRole(DEFAULT_ADMIN_ROLE) {
         _updateFixedValidatorsReward();
         settings.validatorsSettings.apr = value;
+        emit ValidatorsAPRChanged(value);
     }
 
     /** @notice change delegators' fixed APR
@@ -317,6 +343,7 @@ contract CRATStakeManager is
     ) external onlyRole(DEFAULT_ADMIN_ROLE) {
         _updateFixedDelegatorsReward();
         settings.delegatorsSettings.apr = value;
+        emit DelegatorsAPRChanged(value);
     }
 
     /** @notice change validators' claim cooldown
@@ -328,6 +355,7 @@ contract CRATStakeManager is
     ) external onlyRole(DEFAULT_ADMIN_ROLE) {
         _cooldownCheck(value);
         settings.validatorsSettings.claimCooldown = value;
+        emit ValidatorsClaimCooldownChanged(value);
     }
 
     /** @notice change delegators' claim cooldown
@@ -339,6 +367,7 @@ contract CRATStakeManager is
     ) external onlyRole(DEFAULT_ADMIN_ROLE) {
         _cooldownCheck(value);
         settings.delegatorsSettings.claimCooldown = value;
+        emit DelegatorsClaimCooldownChanged(value);
     }
 
     /** @notice withdraw excess reward coins from {forFixedReward} pool
@@ -351,6 +380,7 @@ contract CRATStakeManager is
         if (forFixedReward < amount) revert WrongValue(amount);
         forFixedReward -= amount;
         _safeTransferETH(_msgSender(), amount);
+        emit ExcessFixedRewardWithdrawed(amount);
     }
 
     // distributor methods
