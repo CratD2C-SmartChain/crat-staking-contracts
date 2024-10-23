@@ -168,6 +168,11 @@ contract CRATStakeManager is
     error InStoplistStatus(address account, bool stoplisted);
     error NotEnoughFixedRewards(uint256 toClaim, uint256 pool);
 
+    /// @custom:oz-upgrades-unsafe-allow constructor
+    constructor() {
+        _disableInitializers();
+    }
+
     receive() external payable {
         forFixedReward += msg.value;
     }
