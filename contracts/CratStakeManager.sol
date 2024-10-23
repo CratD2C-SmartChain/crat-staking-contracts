@@ -242,6 +242,7 @@ contract CRATStakeManager is
     function setValidatorsWithdrawCooldown(
         uint256 value
     ) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        _cooldownCheck(value);
         settings.validatorsSettings.withdrawCooldown = value;
     }
 
@@ -252,6 +253,7 @@ contract CRATStakeManager is
     function setDelegatorsWithdrawCooldown(
         uint256 value
     ) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        _cooldownCheck(value);
         settings.delegatorsSettings.withdrawCooldown = value;
     }
 
@@ -325,6 +327,7 @@ contract CRATStakeManager is
     function setValidatorsClaimCooldown(
         uint256 value
     ) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        _cooldownCheck(value);
         settings.validatorsSettings.claimCooldown = value;
     }
 
@@ -335,6 +338,7 @@ contract CRATStakeManager is
     function setDelegatorsClaimCooldown(
         uint256 value
     ) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        _cooldownCheck(value);
         settings.delegatorsSettings.claimCooldown = value;
     }
 
@@ -1535,5 +1539,9 @@ contract CRATStakeManager is
         } else if (validatorCall > 0) {
             return validatorCall;
         } else return 0;
+    }
+
+    function _cooldownCheck(uint256 _value) private pure {
+        if (_value > 365 days) revert WrongValue(_value);
     }
 }
