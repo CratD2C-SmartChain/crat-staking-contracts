@@ -1433,13 +1433,10 @@ contract CRATStakeManager is
             validator,
             true
         );
-        amount += _delegatorInfo[delegator]
-            .delegatorPerValidator[validator]
-            .amount;
-
         uint256 delegatorsAmount = _delegatorInfo[delegator]
             .delegatorPerValidator[validator]
             .amount;
+        amount += delegatorsAmount;
 
         stoppedDelegatorsPool -= delegatorsAmount;
         _validatorInfo[validator].stoppedDelegatedAmount -= delegatorsAmount;
