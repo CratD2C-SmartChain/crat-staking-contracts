@@ -76,7 +76,7 @@ module.exports = {
       accounts: [PRIVATE_KEY]
     }
   },
-  // etherscan: {apiKey: API_KEY},
+
   gasReporter: {
     enabled: true,
   },
@@ -87,5 +87,18 @@ module.exports = {
 
   contractSizer: {
     only: [':CRATStakeManager$', ':CRATStakeManagerTest$']
+  },
+
+  etherscan: {
+    apiKey: "random_string",
+    customChains: [{
+      network: "cratTestnet",
+      chainId: 65349,
+      urls: {
+        apiURL: "https://explorer-testnet.cratd2csmartchain.io/api/",
+        browserURL: "https://explorer-testnet.cratd2csmartchain.io/"
+      }
+    }]
   }
+
 };
