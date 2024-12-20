@@ -1551,9 +1551,10 @@ contract CRATStakeManagerTest is
             .delegatorPerValidator[validator]
             .fixedReward
             .fixedReward = fixedRewardToStore;
-        _safeTransferETH(delegator, amount, true);
 
         emit DelegatorWithdrawed(delegator, validator);
+        
+        _safeTransferETH(delegator, amount, true);
     }
 
     function _updateFixedValidatorsReward() internal {
