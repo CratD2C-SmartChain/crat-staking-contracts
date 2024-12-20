@@ -44,6 +44,10 @@ contract CRATStakeManagerTest is
     /// @notice sum of tokens available to distribute for fixed rewards
     uint256 public forFixedReward;
 
+    /// @notice sum of tokens available for validators/delegators to claim
+    /// (increases due to the failed _safeTransferETH in withdraw methods)
+    mapping(address => uint256) public unusualDepositor;
+
     uint256 public testTime;
 
     TotalRewardsDistributed private _totalValidatorsRewards;
@@ -163,6 +167,12 @@ contract CRATStakeManagerTest is
     event DelegatorCalledForWithdraw(address delegator, address validator);
     event DelegatorRevived(address delegator, address validator);
     event DelegatorWithdrawed(address delegator, address validator);
+    event TransferToDepositorFailed(address depositor, uint256 amount);
+    event UnusualDepositorClaimed(
+        address depositor,
+        address receiver,
+        uint256 amount
+    );
 
     // admin methods events
     event SlashReceiverChanged(address receiver);
@@ -388,7 +398,7 @@ contract CRATStakeManagerTest is
     ) external onlyRole(DEFAULT_ADMIN_ROLE) nonReentrant {
         if (forFixedReward < amount) revert WrongValue(amount);
         forFixedReward -= amount;
-        _safeTransferETH(_msgSender(), amount);
+        _safeTransferETH(_msgSender(), amount, false);
         emit ExcessFixedRewardWithdrawed(amount);
     }
 
@@ -447,7 +457,7 @@ contract CRATStakeManagerTest is
         _totalDelegatorsRewards.variableReward += totalDelegatorsReward;
 
         if (msg.value > totalReward)
-            _safeTransferETH(_msgSender(), msg.value - totalReward); // send excess coins back
+            _safeTransferETH(_msgSender(), msg.value - totalReward, false); // send excess coins back
     }
 
     /** @notice slash validators (and their delegators automatically)
@@ -567,7 +577,7 @@ contract CRATStakeManagerTest is
             }
         }
 
-        if (total > 0) _safeTransferETH(settings.slashReceiver, total);
+        if (total > 0) _safeTransferETH(settings.slashReceiver, total, false);
     }
 
     // swap contract methods
@@ -661,7 +671,7 @@ contract CRATStakeManagerTest is
             _validatorInfo[sender].fixedReward.fixedReward == 0
         ) revert ValidatorsOnly(sender);
         uint256 reward = _claimAsValidator(sender);
-        if (reward > 0) _safeTransferETH(sender, reward);
+        if (reward > 0) _safeTransferETH(sender, reward, false);
     }
 
     /** @notice claim rewards as delegator (earned for certain validators deposit)
@@ -680,7 +690,7 @@ contract CRATStakeManagerTest is
             0
         ) revert ValidatorsOnly(validator);
         uint256 reward = _claimAsDelegatorPerValidator(sender, validator, true);
-        if (reward > 0) _safeTransferETH(sender, reward);
+        if (reward > 0) _safeTransferETH(sender, reward, false);
     }
 
     /** @notice restake rewards as validator
@@ -849,6 +859,18 @@ contract CRATStakeManagerTest is
         delete info.calledForWithdraw;
 
         emit DelegatorRevived(sender, validator);
+    }
+
+    /// @notice claim native coins that appeared as a result of a failed transfer (in withdraw methods)
+    /// @param to funds receiver
+    function claimAsUnusualDepositor(address to) external nonReentrant {
+        address sender = _msgSender();
+        uint256 amount = unusualDepositor[sender];
+        if (amount > 0) {
+            delete unusualDepositor[sender];
+            _safeTransferETH(to, amount, false);
+            emit UnusualDepositorClaimed(sender, to, amount);
+        }
     }
 
     // view methods
@@ -1446,7 +1468,7 @@ contract CRATStakeManagerTest is
                 .fixedReward
                 .fixedReward = fixedRewardToStore;
             delete fixedRewardToStore;
-            _safeTransferETH(delegators[i], amount);
+            _safeTransferETH(delegators[i], amount, true);
 
             emit DelegatorWithdrawed(delegators[i], validator);
         }
@@ -1463,7 +1485,7 @@ contract CRATStakeManagerTest is
 
         delete _validatorInfo[validator];
         _validatorInfo[validator].fixedReward.fixedReward = fixedRewardToStore;
-        _safeTransferETH(validator, amount);
+        _safeTransferETH(validator, amount, true);
 
         emit ValidatorWithdrawed(validator);
     }
@@ -1511,7 +1533,7 @@ contract CRATStakeManagerTest is
             .delegatorPerValidator[validator]
             .fixedReward
             .fixedReward = fixedRewardToStore;
-        _safeTransferETH(delegator, amount);
+        _safeTransferETH(delegator, amount, true);
 
         emit DelegatorWithdrawed(delegator, validator);
     }
@@ -1531,9 +1553,21 @@ contract CRATStakeManagerTest is
         }
     }
 
-    function _safeTransferETH(address _to, uint256 _value) internal {
-        (bool success, ) = _to.call{value: _value}(new bytes(0));
-        if (!success) revert NativeTransferFailed();
+    function _safeTransferETH(
+        address _to,
+        uint256 _value,
+        bool withTry
+    ) internal {
+        if (withTry) {
+            (bool success, ) = _to.call{value: _value}(new bytes(0));
+            if (!success) {
+                unusualDepositor[_to] += _value;
+                emit TransferToDepositorFailed(_to, _value);
+            }
+        } else {
+            (bool success, ) = _to.call{value: _value}(new bytes(0));
+            if (!success) revert NativeTransferFailed();
+        }
     }
 
     // internal view methods

@@ -2603,25 +2603,154 @@ describe("CRATStakeManager", function () {
     })
 
     // UNCOMMENT accounts IN hardhat.config.networks.hardhat TO MAKE IT SUCCESSFUL !!!
-    it("Check delegators per 1 validator limit", async ()=> {
-      const {stakeManager, validator1/* , owner */} = await loadFixture(deployFixture);
+    // it("Check delegators per 1 validator limit", async ()=> {
+    //   const {stakeManager, validator1/* , owner */} = await loadFixture(deployFixture);
 
-      await stakeManager.connect(validator1).depositAsValidator(2000, {value: ethers.parseEther('100')});
+    //   await stakeManager.connect(validator1).depositAsValidator(2000, {value: ethers.parseEther('100')});
 
-      let signers = await ethers.getSigners();
+    //   let signers = await ethers.getSigners();
 
-      for(let i = 9; i < 4809; i++) {
-        await stakeManager.connect(signers[i]).depositAsDelegator(validator1, {value: ethers.parseEther('10')});
-      }
+    //   for(let i = 9; i < 4809; i++) {
+    //     await stakeManager.connect(signers[i]).depositAsDelegator(validator1, {value: ethers.parseEther('10')});
+    //   }
 
-      await expect(stakeManager.connect(signers[4809]).depositAsDelegator(validator1, {value: ethers.parseEther('10')})).to.be.revertedWithCustomError(stakeManager, "DelegatorsLimit");
-    })
+    //   await expect(stakeManager.connect(signers[4809]).depositAsDelegator(validator1, {value: ethers.parseEther('10')})).to.be.revertedWithCustomError(stakeManager, "DelegatorsLimit");
+    // })
 
     it("Close zero addres brunch in deployment", async ()=> {
       const {stakeManager} = await loadFixture(deployFixture);
 
       const CRATStakeManager = await ethers.getContractFactory("CRATStakeManager");
       await expect(upgrades.deployProxy(CRATStakeManager, [ZERO_ADDRESS, ZERO_ADDRESS])).to.be.revertedWithCustomError(stakeManager, "ZeroAddress");
+    })
+  })
+
+  describe("After DualDefense stage", function() {
+    describe("Validator Withdrawal Denial via Malicious Delegator, fix upd in 19.12.24", function() {
+      it("Malicious Delegator tries to claim and withdraw by itself", async ()=> {
+        const {stakeManager, validator1, delegator1, distributor} = await loadFixture(deployFixture);
+
+        await stakeManager.connect(validator1).depositAsValidator("1000", {value: ethers.parseEther('100')});
+
+        const maliciousDelegator = await ethers.deployContract("MaliciousDelegator", [stakeManager]);
+        await maliciousDelegator.connect(delegator1).deposit(validator1, {value: ethers.parseEther('10')});
+        let d1Start = await time.latest();
+        let validator1Info = await stakeManager.getValidatorInfo(validator1);
+        assert.equal(validator1Info.amount, ethers.parseEther('100'));
+        assert.equal(validator1Info.delegatedAmount, ethers.parseEther('10'));
+        assert.equal(validator1Info.stoppedDelegatedAmount, 0);
+        assert.equal(validator1Info.delegators.length, 1);
+        assert.equal(validator1Info.delegators[0], maliciousDelegator.target);
+        assert.equal(await stakeManager.isDelegator(maliciousDelegator), true);
+        assert.equal(await stakeManager.unusualDepositor(maliciousDelegator), 0);
+
+        await time.increase(time.duration.days(30));
+        await distributor.sendTransaction({
+          to: stakeManager,
+          value: ethers.parseEther('100')
+        });
+        await expect(maliciousDelegator.connect(delegator1).claim(validator1)).to.be.revertedWithCustomError(stakeManager, "NativeTransferFailed");
+
+        await maliciousDelegator.connect(delegator1).callForWithdraw(validator1);
+        let currentTime = await time.latest();
+        let delegatorInfo = await stakeManager.getDelegatorInfo(maliciousDelegator);
+        assert.equal(delegatorInfo.delegatorPerValidatorArr[0].calledForWithdraw, currentTime);
+        assert.equal(delegatorInfo.delegatorPerValidatorArr[0].lastClaim, d1Start);
+
+        await time.increase(time.duration.days(5));
+
+        await expect(maliciousDelegator.connect(delegator1).withdraw(validator1)).to.changeEtherBalances([stakeManager, maliciousDelegator], [0,0]);
+        let finalAmount = BigInt(currentTime - d1Start) * BigInt(13) * ethers.parseEther('10') / BigInt(100 * 86400 * 365) + ethers.parseEther('10');
+        assert.equal(await stakeManager.unusualDepositor(maliciousDelegator), finalAmount);
+        validator1Info = await stakeManager.getValidatorInfo(validator1);
+        assert.equal(validator1Info.delegatedAmount, 0);
+        assert.equal(validator1Info.delegators.length, 0);
+        assert.equal(await stakeManager.isDelegator(maliciousDelegator), false);
+
+        await expect(maliciousDelegator.connect(delegator1).claimAsUnusual(delegator1)).to.changeEtherBalances([stakeManager, delegator1], [-finalAmount, finalAmount]);
+        await expect(maliciousDelegator.connect(delegator1).claimAsUnusual(delegator1)).to.changeEtherBalances([stakeManager, delegator1], [0, 0]);
+      })
+
+      it("Validator with Malicious Delegator tries to withdraw", async ()=> {
+        const {stakeManager, validator1, delegator1, distributor} = await loadFixture(deployFixture);
+
+        await stakeManager.connect(validator1).depositAsValidator("1000", {value: ethers.parseEther('100')});
+        let v1Start = await time.latest();
+
+        const maliciousDelegator = await ethers.deployContract("MaliciousDelegator", [stakeManager]);
+        await maliciousDelegator.connect(delegator1).deposit(validator1, {value: ethers.parseEther('10')});
+        let d1Start = await time.latest();
+        let validator1Info = await stakeManager.getValidatorInfo(validator1);
+        assert.equal(validator1Info.amount, ethers.parseEther('100'));
+        assert.equal(validator1Info.delegatedAmount, ethers.parseEther('10'));
+        assert.equal(validator1Info.stoppedDelegatedAmount, 0);
+        assert.equal(validator1Info.delegators.length, 1);
+        assert.equal(validator1Info.delegators[0], maliciousDelegator.target);
+        assert.equal(await stakeManager.isDelegator(maliciousDelegator), true);
+        assert.equal(await stakeManager.unusualDepositor(maliciousDelegator), 0);
+
+        await distributor.sendTransaction({
+          to: stakeManager,
+          value: ethers.parseEther('100')
+        });
+
+        await time.increase(time.duration.weeks(2));
+
+        await stakeManager.connect(validator1).validatorCallForWithdraw();
+        let currentTime = await time.latest();
+
+        await time.increase(time.duration.weeks(1));
+
+        let validatorAmount = ethers.parseEther('100') + ethers.parseEther('100') * BigInt(15) * BigInt(currentTime - v1Start) / BigInt(86400 * 365 * 100);
+        let delegatorAmount = ethers.parseEther('10') + ethers.parseEther('10') * BigInt(13) * BigInt(currentTime - d1Start) / BigInt(86400 * 365 * 100);
+        await expect(stakeManager.connect(validator1).withdrawAsValidator()).to.changeEtherBalances([stakeManager, validator1, maliciousDelegator], [-validatorAmount, validatorAmount, 0]);
+        assert.equal(await stakeManager.unusualDepositor(maliciousDelegator), delegatorAmount);
+
+        await expect(maliciousDelegator.connect(delegator1).claimAsUnusual(delegator1)).to.changeEtherBalances([stakeManager, delegator1], [-delegatorAmount, delegatorAmount]);
+      })
+
+      it("Malicious Validator tries to withdraw by itself", async ()=> {
+        const {stakeManager, validator1, delegator1, distributor} = await loadFixture(deployFixture);
+
+        const maliciousValidator = await ethers.deployContract("MaliciousValidator", [stakeManager]);
+
+        await maliciousValidator.connect(validator1).deposit({value: ethers.parseEther('100')});
+        let v1Start = await time.latest();
+
+        await stakeManager.connect(delegator1).depositAsDelegator(maliciousValidator, {value: ethers.parseEther('10')});
+        let d1Start = await time.latest();
+
+        let validator1Info = await stakeManager.getValidatorInfo(maliciousValidator);
+        assert.equal(validator1Info.amount, ethers.parseEther('100'));
+        assert.equal(validator1Info.delegatedAmount, ethers.parseEther('10'));
+        assert.equal(validator1Info.stoppedDelegatedAmount, 0);
+        assert.equal(validator1Info.delegators.length, 1);
+        assert.equal(validator1Info.delegators[0], delegator1.address);
+        assert.equal(await stakeManager.isValidator(maliciousValidator), true);
+        assert.equal(await stakeManager.unusualDepositor(maliciousValidator), 0);
+
+        await distributor.sendTransaction({
+          to: stakeManager,
+          value: ethers.parseEther('100')
+        });
+
+        await time.increase(time.duration.weeks(2));
+
+        await expect(maliciousValidator.connect(validator1).claim()).to.be.revertedWithCustomError(stakeManager, "NativeTransferFailed");
+        assert.equal(await stakeManager.unusualDepositor(maliciousValidator), 0);
+
+        await maliciousValidator.connect(validator1).callForWithdraw();
+        let currentTime = await time.latest();
+
+        await time.increase(time.duration.weeks(1));
+
+        let validatorAmount = ethers.parseEther('100') + ethers.parseEther('100') * BigInt(15) * BigInt(currentTime - v1Start) / BigInt(86400 * 365 * 100);
+        let delegatorAmount = ethers.parseEther('10') + ethers.parseEther('10') * BigInt(13) * BigInt(currentTime - d1Start) / BigInt(86400 * 365 * 100);
+        await expect(maliciousValidator.connect(validator1).withdraw()).to.changeEtherBalances([stakeManager, maliciousValidator, delegator1], [-delegatorAmount, 0, delegatorAmount]);
+        assert.equal(await stakeManager.unusualDepositor(maliciousValidator), validatorAmount);
+
+        await expect(maliciousValidator.connect(validator1).claimAsUnusual(validator1)).to.changeEtherBalances([stakeManager, validator1], [-validatorAmount, validatorAmount]);
+      })
     })
   })
 });
