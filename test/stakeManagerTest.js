@@ -2603,19 +2603,19 @@ describe("CRATStakeManager", function () {
     })
 
     // UNCOMMENT accounts IN hardhat.config.networks.hardhat TO MAKE IT SUCCESSFUL !!!
-    // it("Check delegators per 1 validator limit", async ()=> {
-    //   const {stakeManager, validator1/* , owner */} = await loadFixture(deployFixture);
+    it("Check delegators per 1 validator limit", async ()=> {
+      const {stakeManager, validator1/* , owner */} = await loadFixture(deployFixture);
 
-    //   await stakeManager.connect(validator1).depositAsValidator(2000, {value: ethers.parseEther('100')});
+      await stakeManager.connect(validator1).depositAsValidator(2000, {value: ethers.parseEther('100')});
 
-    //   let signers = await ethers.getSigners();
+      let signers = await ethers.getSigners();
 
-    //   for(let i = 9; i < 4809; i++) {
-    //     await stakeManager.connect(signers[i]).depositAsDelegator(validator1, {value: ethers.parseEther('10')});
-    //   }
+      for(let i = 9; i < 4809; i++) {
+        await stakeManager.connect(signers[i]).depositAsDelegator(validator1, {value: ethers.parseEther('10')});
+      }
 
-    //   await expect(stakeManager.connect(signers[4809]).depositAsDelegator(validator1, {value: ethers.parseEther('10')})).to.be.revertedWithCustomError(stakeManager, "DelegatorsLimit");
-    // })
+      await expect(stakeManager.connect(signers[4809]).depositAsDelegator(validator1, {value: ethers.parseEther('10')})).to.be.revertedWithCustomError(stakeManager, "DelegatorsLimit");
+    })
 
     it("Close zero addres brunch in deployment", async ()=> {
       const {stakeManager} = await loadFixture(deployFixture);
@@ -2623,7 +2623,7 @@ describe("CRATStakeManager", function () {
       const CRATStakeManager = await ethers.getContractFactory("CRATStakeManager");
       await expect(upgrades.deployProxy(CRATStakeManager, [ZERO_ADDRESS, ZERO_ADDRESS])).to.be.revertedWithCustomError(stakeManager, "ZeroAddress");
     })
-  })
+  });
 
   describe("After DualDefense stage", function() {
     describe("Validator Withdrawal Denial via Malicious Delegator, fix upd in 19.12.24", function() {
@@ -2752,5 +2752,60 @@ describe("CRATStakeManager", function () {
         await expect(maliciousValidator.connect(validator1).claimAsUnusual(validator1)).to.changeEtherBalances([stakeManager, validator1], [-validatorAmount, validatorAmount]);
       })
     })
-  })
+
+    describe("Fix unfair slashing mechanics", function() {
+      it("Slash validator twice (interval more than probation period)", async ()=> {
+        const {stakeManager, validator1, distributor, slashReceiver} = await loadFixture(deployFixture);
+
+        const fixedSlashAmount = ethers.parseEther('10');
+        await stakeManager.setValidatorsAmountToSlash(fixedSlashAmount);
+
+        await stakeManager.connect(validator1).depositAsValidator("1000", {value: ethers.parseEther('200')});
+
+        await expect(stakeManager.connect(distributor).slash([validator1])).to.changeEtherBalances([stakeManager, slashReceiver], [-fixedSlashAmount, fixedSlashAmount]);
+        let currentTime = await time.latest();
+        let validatorInfo = await stakeManager.getValidatorInfo(validator1);
+        assert.equal(validatorInfo.penalty.lastSlash, currentTime);
+        assert.equal(validatorInfo.amount, ethers.parseEther('190'));
+
+        await time.increase(time.duration.days(90));
+
+        await expect(stakeManager.connect(distributor).slash([validator1])).to.changeEtherBalances([stakeManager, slashReceiver], [-fixedSlashAmount, fixedSlashAmount]);
+        currentTime = await time.latest();
+        validatorInfo = await stakeManager.getValidatorInfo(validator1);
+        assert.equal(validatorInfo.penalty.lastSlash, currentTime);
+        assert.equal(validatorInfo.amount, ethers.parseEther('180'));
+
+        await time.increase(time.duration.days(1));
+
+        await stakeManager.connect(validator1).depositAsValidator(0, {value: ethers.parseEther('20')});
+        let currentTime2 = await time.latest();
+        validatorInfo = await stakeManager.getValidatorInfo(validator1);
+        assert.equal(validatorInfo.penalty.lastSlash, currentTime);
+        assert.equal(validatorInfo.amount, ethers.parseEther('200'));
+
+        await time.increase(time.duration.days(1));
+
+        let currentTime3 = await time.latest() + 1;
+        let apr = BigInt(currentTime3 - currentTime2) * BigInt(15) * ethers.parseEther('200') / BigInt(365 * 86400 * 100) + BigInt(currentTime2 - currentTime) * BigInt(15) * ethers.parseEther('180') / BigInt(365 * 86400 * 100);
+        await expect(stakeManager.connect(distributor).slash([validator1])).to.changeEtherBalances([stakeManager, slashReceiver], [-(fixedSlashAmount + apr), fixedSlashAmount + apr]);
+        validatorInfo = await stakeManager.getValidatorInfo(validator1);
+        assert.equal(validatorInfo.penalty.lastSlash, currentTime3);
+        assert.equal(validatorInfo.penalty.potentialPenalty, 0);
+        assert.equal(validatorInfo.amount, ethers.parseEther('190') - apr);
+
+        // change probation period duration
+        await stakeManager.setValidatorsProbationPeriod(time.duration.days(30));
+
+        await time.increase(time.duration.days(30));
+
+        await expect(stakeManager.connect(distributor).slash([validator1])).to.changeEtherBalances([stakeManager, slashReceiver], [-fixedSlashAmount, fixedSlashAmount]);
+        currentTime = await time.latest();
+        validatorInfo = await stakeManager.getValidatorInfo(validator1);
+        assert.equal(validatorInfo.penalty.lastSlash, currentTime);
+        assert.equal(validatorInfo.penalty.potentialPenalty, 0);
+        assert.equal(validatorInfo.amount, ethers.parseEther('180') - apr);
+      })
+    })
+  });
 });

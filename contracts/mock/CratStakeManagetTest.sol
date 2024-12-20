@@ -119,6 +119,7 @@ contract CRATStakeManagerTest is
 
     struct GeneralSettings {
         uint256 validatorsLimit;
+        uint256 validatorsProbationPeriod;
         address slashReceiver;
         RoleSettings validatorsSettings;
         RoleSettings delegatorsSettings;
@@ -188,6 +189,7 @@ contract CRATStakeManagerTest is
     event ValidatorsAPRChanged(uint256 apr);
     event DelegatorsAPRChanged(uint256 apr);
     event ExcessFixedRewardWithdrawed(uint256 amount);
+    event ValidatorsProbationPeriodChanged(uint256 value);
 
     // custom error codes
     error ZeroAddress();
@@ -220,6 +222,7 @@ contract CRATStakeManagerTest is
 
         settings = GeneralSettings(
             101,
+            90 days,
             _receiver,
             RoleSettings(
                 15_00,
@@ -402,6 +405,18 @@ contract CRATStakeManagerTest is
         emit ExcessFixedRewardWithdrawed(amount);
     }
 
+    /** @notice change validators' probation period - duration in seconds between two slashing events;
+     * if second slashing happens earlier that probation period passed, validator loses his APR rewards
+     * @param value new minimum amount
+     * @dev only admin
+     */
+    function setValidatorsProbationPeriod(
+        uint256 value
+    ) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        settings.validatorsProbationPeriod = value;
+        emit ValidatorsProbationPeriodChanged(value);
+    }
+
     // distributor methods
 
     /** @notice distribute rewards to validators (and their delegators automatically)
@@ -472,21 +487,24 @@ contract CRATStakeManagerTest is
         uint256 fee;
         address[] memory delegators;
         uint256 total;
+        uint256 currentTime = block.timestamp;
         for (uint256 i; i < len; ++i) {
             if (isValidator(validators[i])) {
                 _updateValidatorReward(validators[i]);
 
-                fee =
-                    _validatorInfo[validators[i]].penalty.potentialPenalty +
-                    settings.validatorsSettings.toSlash;
+                fee = settings.validatorsSettings.toSlash;
+                if (
+                    _validatorInfo[validators[i]].penalty.lastSlash +
+                        settings.validatorsProbationPeriod >
+                    currentTime
+                ) fee += _validatorInfo[validators[i]].penalty.potentialPenalty;
                 fee = _validatorInfo[validators[i]].amount > fee
                     ? fee
                     : _validatorInfo[validators[i]].amount;
 
                 _validatorInfo[validators[i]].amount -= fee;
                 delete _validatorInfo[validators[i]].penalty.potentialPenalty;
-                _validatorInfo[validators[i]].penalty.lastSlash = block
-                    .timestamp;
+                _validatorInfo[validators[i]].penalty.lastSlash = currentTime;
                 total += fee;
                 delegators = _validatorInfo[validators[i]].delegators.values();
                 if (_validatorInfo[validators[i]].calledForWithdraw > 0) {
